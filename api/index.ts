@@ -6,8 +6,10 @@ const TAP_URL = 'https://irsa.ipac.caltech.edu/TAP/sync'
 const S3_BASE = 'https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/'
 
 const supabase =
-  process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY
+    ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+        auth: { persistSession: false },
+      })
     : null
 
 type Frame = { url: string; mjd: number; detector: number; obsid: string }
@@ -42,7 +44,8 @@ const app = express()
 app.get('/api/health', async (_req, res) => {
   let db = 'not configured'
   if (supabase) {
-    const { error } = await supabase.from('searches').select('key', { head: true, count: 'exact' })
+    // Not `head: true`: a HEAD request hides "table missing" errors.
+    const { error } = await supabase.from('searches').select('key').limit(1)
     db = error ? `error: ${error.message}` : 'ok'
   }
   res.json({ ok: true, db })
