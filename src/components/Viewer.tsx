@@ -28,6 +28,7 @@ import {
   groupFrames,
   medianStack,
   renderImage,
+  smooth,
   subtractBackground,
   visitsOf,
   WAVE_MAX,
@@ -60,10 +61,13 @@ const FOVS = [
   { px: 96, label: '10′' },
 ]
 const GROUPINGS: { id: Grouping; label: string; hint: string }[] = [
-  { id: 'visit', label: 'Per visit', hint: 'One deep stack per 6-month survey pass. Best for slow movers.' },
+  { id: 'all', label: 'All', hint: 'Every exposure in this band stacked into one deep image. Best for faint objects.' },
+  { id: 'visit', label: 'Per pass', hint: 'One stack per 6-month survey pass. Best for slow movers.' },
   { id: 'day', label: 'Per day', hint: 'One stack per observing day. Shows changes within a pass.' },
-  { id: 'exposure', label: 'Every exposure', hint: 'Raw single frames, each at a slightly different wavelength.' },
+  { id: 'exposure', label: 'Each', hint: 'Single exposures, each at a slightly different wavelength.' },
 ]
+
+type GaiaStar = { ra: number; dec: number; g: number; pmra: number; pmdec: number }
 
 function Segmented<T extends string | number>({
   value,
@@ -92,6 +96,22 @@ function Segmented<T extends string | number>({
   )
 }
 
+function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition',
+        on ? 'bg-secondary text-foreground ring-1 ring-primary/50' : 'bg-muted text-muted-foreground hover:text-foreground',
+      )}
+    >
+      <span className={cn('size-1.5 rounded-full', on ? 'bg-primary' : 'bg-muted-foreground/40')} />
+      {label}
+    </button>
+  )
+}
+
 function Section({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="space-y-2.5">
@@ -102,6 +122,20 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
       {children}
     </section>
   )
+}
+
+/** Difference mode: subtract the per-pixel median of all stacks, leaving only what changed. */
+function diffImages(stacks: Float32Array[], diff: boolean, ds: Dataset | null): Float32Array[] {
+  if (!diff || stacks.length < 2 || !ds) return stacks
+  const n = ds.size * ds.size
+  const ref = new Float32Array(n)
+  const buf = new Float32Array(stacks.length)
+  for (let p = 0; p < n; p++) {
+    stacks.forEach((s, k) => (buf[k] = s[p]))
+    const sorted = buf.slice().sort()
+    ref[p] = sorted[Math.floor(sorted.length / 2)]
+  }
+  return stacks.map((s) => s.map((v, p) => v - ref[p]))
 }
 
 /** Approximate colour of each wavelength, for the slider track (blue = shorter, red = longer). */
@@ -122,6 +156,9 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   const cmap = (params.get('cmap') as Colormap) ?? 'ir'
   const fovPx = Number(params.get('fov') ?? 64)
   const skipFlagged = params.get('flags') === 'skip'
+  const smoothOn = params.get('smooth') === '1'
+  const gaiaOn = params.get('gaia') === '1'
+  const [gaia, setGaia] = useState<GaiaStar[] | null>(null)
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(true)
   const [fps, setFps] = useState(2)
@@ -142,7 +179,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
       ? loadSeeded(target.slug, ctrl.signal).then(setDs)
       : loadLive(centre.ra, centre.dec, LIVE_SIZE, (d, p) => {
           setProgress(p)
-          if (d.frames.length) setDs(d)
+          if (d) setDs(d)
         }, ctrl.signal).then((d) => {
           setDs(d)
           setProgress(null)
@@ -171,21 +208,23 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     [ds, groups],
   )
 
-  // Difference mode: subtract the median of all stacks, leaving only what changed.
   const images = useMemo(() => {
-    if (!diff || stacks.length < 2 || !ds) return stacks
-    const n = ds.size * ds.size
-    const ref = new Float32Array(n)
-    const buf = new Float32Array(stacks.length)
-    for (let p = 0; p < n; p++) {
-      stacks.forEach((s, k) => (buf[k] = s[p]))
-      const s = buf.slice().sort()
-      ref[p] = s[Math.floor(s.length / 2)]
-    }
-    return stacks.map((s) => s.map((v, p) => v - ref[p]))
-  }, [stacks, diff, ds])
+    const out = diffImages(stacks, diff, ds)
+    return smoothOn && ds ? out.map((img) => smooth(img, ds.size)) : out
+  }, [stacks, diff, ds, smoothOn])
+
+  // Gaia DR3 stars in the field, fetched once per position when the overlay is first shown.
+  useEffect(() => {
+    if (!gaiaOn || !ds || gaia) return
+    const radius = ((ds.size * PIXEL_ARCSEC) / 3600) * 0.72
+    fetch(`/api/gaia?ra=${ds.ra}&dec=${ds.dec}&radius=${radius.toFixed(4)}`)
+      .then((r) => (r.ok ? r.json() : { stars: [] }))
+      .then((b) => setGaia(b.stars))
+      .catch(() => setGaia([]))
+  }, [gaiaOn, ds, gaia])
 
   const crop = useMemo(() => centredCrop(ds?.size ?? 64, fovPx), [ds?.size, fovPx])
+
   const limits = useMemo(() => displayRange(images, crop, diff), [images, crop, diff])
   const current = Math.min(frameIdx, Math.max(0, groups.length - 1))
   const group = groups[current]
@@ -246,6 +285,24 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     const dy = ((p.dec - ds.dec) * 3600) / PIXEL_ARCSEC
     return [half + dx, half + dy] as [number, number]
   }, [target, group, ds, half])
+
+  // Gaia stars placed at this frame's date (Gaia positions are for 2016.0).
+  const gaiaPx = useMemo(() => {
+    if (!gaiaOn || !gaia || !ds || !group) return []
+    const dt = mjdToYear(group.mjd) - 2016
+    const cosd = Math.cos((ds.dec * Math.PI) / 180)
+    return gaia
+      .map((st) => {
+        const ra = st.ra + (st.pmra * dt) / 3.6e6 / cosd
+        const dec = st.dec + (st.pmdec * dt) / 3.6e6
+        return {
+          x: half - ((ra - ds.ra) * cosd * 3600) / PIXEL_ARCSEC,
+          y: half + ((dec - ds.dec) * 3600) / PIXEL_ARCSEC,
+          g: st.g,
+        }
+      })
+      .filter((p) => p.x > crop.x0 - 0.5 && p.x < crop.x0 + crop.n - 0.5 && p.y > crop.y0 - 0.5 && p.y < crop.y0 + crop.n - 0.5)
+  }, [gaiaOn, gaia, ds, group, half, crop])
 
   const spectrum: Point[] = useMemo(() => {
     if (!ds) return []
@@ -345,6 +402,17 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               />
             )}
 
+            {/* Gaia DR3 stars */}
+            {images.length > 0 &&
+              gaiaPx.map((p, k) => (
+                <div
+                  key={k}
+                  title={`Gaia DR3 star, G = ${p.g.toFixed(1)}`}
+                  className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-300/80"
+                  style={{ ...pct(p.x, p.y), width: `${Math.max(1.2, 3.2 - (p.g - 12) * 0.25) * (64 / crop.n)}%`, aspectRatio: '1' }}
+                />
+              ))}
+
             {/* Predicted catalogue position and measurement aperture */}
             {images.length > 0 && predicted && (
               <div
@@ -352,7 +420,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 style={pct(predicted[0], predicted[1])}
               />
             )}
-            {images.length > 0 && (
+            {/* Shown once the user picks a spot, so it never hides the object at the centre. */}
+            {images.length > 0 && apert && (
               <div
                 className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
                 // Ring drawn just outside the 2-pixel-radius photometry aperture.
@@ -368,7 +437,12 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 <div className="rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur">
                   <div className="tabular font-heading text-2xl font-semibold leading-none">{group.label}</div>
                   <div className="mt-1 text-xs text-white/70">
-                    {grouping === 'visit' ? `Survey pass ${group.visit + 1}` : `Pass ${group.visit + 1}`} ·{' '}
+                    {grouping === 'all'
+                      ? `All ${visitNames.length} survey passes`
+                      : grouping === 'visit'
+                        ? `Survey pass ${group.visit + 1}`
+                        : `Pass ${group.visit + 1}`}{' '}
+                    ·{' '}
                     {group.indices.length} exposure{group.indices.length > 1 ? 's' : ''}
                   </div>
                 </div>
@@ -410,11 +484,15 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   <div className="max-w-sm space-y-4">
                     <LoaderCircle className="mx-auto size-8 animate-spin text-primary" />
                     <p className="font-medium">
-                      {target ? 'Loading SPHEREx frames…' : 'Searching every SPHEREx image of this spot…'}
+                      {target
+                        ? 'Loading SPHEREx frames…'
+                        : progress?.phase === 'frames'
+                          ? `Cutting ${progress.total} SPHEREx images from NASA’s cloud archive…`
+                          : 'Searching every SPHEREx image of this spot…'}
                     </p>
-                    {!target && (
+                    {!target && progress?.phase !== 'frames' && (
                       <p className="text-sm text-muted-foreground">
-                        NASA’s archive takes about a minute for a new position. Repeat visits are instant.
+                        NASA’s archive can take up to a minute for a new position. Repeat visits are instant.
                       </p>
                     )}
                   </div>
@@ -559,6 +637,10 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 ]}
                 onChange={(m) => setParams({ mode: m === 'diff' ? 'diff' : null })}
               />
+              <div className="grid grid-cols-2 gap-1">
+                <Toggle on={smoothOn} onClick={() => setParams({ smooth: smoothOn ? null : '1' })} label="Smooth" />
+                <Toggle on={gaiaOn} onClick={() => setParams({ gaia: gaiaOn ? null : '1' })} label="Gaia stars" />
+              </div>
             </Section>
             <Section title="Field of view">
               <Segmented
@@ -582,7 +664,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
           )}
 
           <Section
-            title="Spectrum at the ring"
+            title={apert ? "Spectrum at the ring" : "Spectrum at the centre"}
             aside={
               <button
                 onClick={() => setApert(null)}
@@ -655,6 +737,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   )}
                   Source: NASA/IPAC IRSA, SPHEREx Level 2 spectral images.
                   {predicted && ' Dashed circle: where catalogue motion predicts the target on this date.'}
+                  {gaiaOn && ' Green circles: Gaia DR3 stars at this date (bigger = brighter).'}
                 </p>
               )}
             </Section>

@@ -10,7 +10,7 @@ export default function App() {
   const go = (d: Destination) =>
     setParams(
       'target' in d
-        ? { target: d.target }
+        ? { target: d.target, ...findTarget(d.target)?.defaults }
         : { ra: d.ra.toFixed(5), dec: d.dec.toFixed(5), name: d.name ?? null },
       true,
     )

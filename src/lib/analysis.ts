@@ -31,7 +31,7 @@ export const DETECTOR_BANDS: Record<number, [number, number]> = {
 export const WAVE_MIN = 0.75
 export const WAVE_MAX = 5.0
 
-export type Grouping = 'visit' | 'day' | 'exposure'
+export type Grouping = 'all' | 'visit' | 'day' | 'exposure'
 
 export type Group = { label: string; mjd: number; visit: number; indices: number[] }
 
@@ -70,7 +70,13 @@ export function groupFrames(
   const groups = new Map<string, Group>()
   for (const { f, i } of inBand) {
     const key =
-      grouping === 'visit' ? `v${visits[i]}` : grouping === 'day' ? `d${Math.floor(f.mjd)}` : f.obsid
+      grouping === 'all'
+        ? 'all'
+        : grouping === 'visit'
+          ? `v${visits[i]}`
+          : grouping === 'day'
+            ? `d${Math.floor(f.mjd)}`
+            : f.obsid
     let g = groups.get(key)
     if (!g) {
       g = { label: '', mjd: 0, visit: visits[i], indices: [] }
@@ -80,7 +86,14 @@ export function groupFrames(
   }
   return [...groups.values()].map((g) => {
     const mjd = g.indices.reduce((s, i) => s + ds.frames[i].mjd, 0) / g.indices.length
-    const label = grouping === 'visit' ? formatMonth(mjd) : formatDay(mjd)
+    const first = Math.min(...g.indices.map((i) => ds.frames[i].mjd))
+    const last = Math.max(...g.indices.map((i) => ds.frames[i].mjd))
+    const label =
+      grouping === 'all'
+        ? `${formatMonth(first)} – ${formatMonth(last)}`
+        : grouping === 'visit'
+          ? formatMonth(mjd)
+          : formatDay(mjd)
     return { ...g, mjd, label }
   })
 }
@@ -258,4 +271,28 @@ export function renderImage(
       data[o + 3] = 255
     }
   return new ImageData(data, n, n)
+}
+
+/** Gaussian blur (separable, NaN-aware). Brings faint sources above the pixel noise. */
+export function smooth(img: Float32Array, size: number, sigma = 0.8): Float32Array {
+  const r = Math.ceil(sigma * 3)
+  const k = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sigma * sigma)))
+  const pass = (src: Float32Array, horizontal: boolean) => {
+    const out = new Float32Array(src.length)
+    for (let j = 0; j < size; j++)
+      for (let i = 0; i < size; i++) {
+        let sum = 0, wsum = 0
+        for (let t = -r; t <= r; t++) {
+          const x = horizontal ? i + t : i, y = horizontal ? j : j + t
+          if (x < 0 || y < 0 || x >= size || y >= size) continue
+          const v = src[y * size + x]
+          if (!Number.isFinite(v)) continue
+          sum += v * k[t + r]
+          wsum += k[t + r]
+        }
+        out[j * size + i] = wsum ? sum / wsum : NaN
+      }
+    return out
+  }
+  return pass(pass(img, true), false)
 }

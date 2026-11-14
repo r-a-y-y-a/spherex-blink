@@ -12,6 +12,8 @@ export type Target = {
   pmdec: number // mas/yr
   /** Detector where the object stands out best (1-6, 0.75-5 um). */
   bestDetector: number
+  /** View settings applied when the target is opened from its card. */
+  defaults?: Record<string, string>
 }
 
 export const TARGETS: Target[] = [
@@ -19,12 +21,14 @@ export const TARGETS: Target[] = [
     slug: 'wise-0855',
     name: 'WISE 0855−0714',
     kind: 'Brown dwarf',
-    blurb: 'The coldest known brown dwarf, about as cold as the North Pole. Invisible at short wavelengths, bright at 4.5 µm.',
+    blurb: 'The coldest known brown dwarf. At short wavelengths you only see a star it is passing; at 4.5 µm the light shifts onto the brown dwarf.',
     ra2000: 133.81890825,
     dec2000: -7.247048,
     pmra: -8123.7,
     pmdec: 673.2,
     bestDetector: 6,
+    // Faint: one deep smoothed stack, with Gaia showing the background star it is passing.
+    defaults: { group: 'all', smooth: '1', gaia: '1', fov: '32' },
   },
   {
     slug: 'barnards-star',

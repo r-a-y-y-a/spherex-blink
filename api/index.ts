@@ -1,6 +1,10 @@
 import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { searchArchive } from '../src/lib/spherex/archive.ts'
+import { fetchFrame, pool, type Frame, type FrameRef } from '../src/lib/spherex/cutout.ts'
+
+const S3_PREFIX = 'https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/'
+const MAX_BATCH = 60
 
 const supabase =
   process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY
@@ -50,6 +54,76 @@ app.get('/api/search', async (req, res) => {
     res.json({ ra, dec, cached: false, frames })
   } catch (err) {
     res.status(502).json({ error: `SPHEREx archive search failed: ${(err as Error).message}` })
+  }
+})
+
+// Cuts a batch of frames next to the data. Browsers get only 6 HTTP/1.1 connections to S3,
+// while this function runs in the same AWS region as the bucket with many in flight.
+// Response: uint32 meta length, meta JSON, padding to 4 bytes, then float32 pixels (LE).
+app.post('/api/cutouts', express.json({ limit: '200kb' }), async (req, res) => {
+  const { ra, dec, size, refs } = req.body ?? {}
+  const okRefs =
+    Array.isArray(refs) &&
+    refs.length > 0 &&
+    refs.length <= MAX_BATCH &&
+    refs.every((r: FrameRef) => typeof r?.url === 'string' && r.url.startsWith(S3_PREFIX))
+  if (parseCoord(ra, 0, 360) === null || parseCoord(dec, -90, 90) === null || ![32, 64, 96].includes(size) || !okRefs) {
+    res.status(400).json({ error: `Send ra, dec, size (32/64/96) and 1-${MAX_BATCH} SPHEREx frame refs.` })
+    return
+  }
+  const results = await pool(refs as FrameRef[], 32, (ref) => fetchFrame(ref, ra, dec, size), undefined, 2)
+  const frames = results.filter((r): r is Frame => !(r instanceof Error))
+  const meta = JSON.stringify({
+    frames: frames.map(({ pixels: _p, size: _s, ...m }) => m),
+    failed: results.length - frames.length,
+  })
+  const metaBytes = Buffer.from(meta)
+  const pad = (4 - ((4 + metaBytes.length) % 4)) % 4
+  const out = Buffer.alloc(4 + metaBytes.length + pad + frames.length * size * size * 4)
+  out.writeUInt32LE(metaBytes.length, 0)
+  metaBytes.copy(out, 4)
+  let o = 4 + metaBytes.length + pad
+  for (const f of frames) {
+    Buffer.from(f.pixels.buffer, f.pixels.byteOffset, f.pixels.byteLength).copy(out, o)
+    o += f.pixels.byteLength
+  }
+  res.setHeader('Content-Type', 'application/octet-stream')
+  res.send(out)
+})
+
+// Gaia DR3 stars around a position (ESA archive has no CORS, so proxy it). Positions are at
+// epoch 2016.0 with proper motions, so the viewer can place each star at each frame's date.
+app.get('/api/gaia', async (req, res) => {
+  const ra = parseCoord(req.query.ra, 0, 360)
+  const dec = parseCoord(req.query.dec, -90, 90)
+  const radius = parseCoord(req.query.radius ?? 0.12, 0.001, 0.25)
+  if (ra === null || dec === null || radius === null) {
+    res.status(400).json({ error: 'ra, dec and radius (deg, max 0.25) are required' })
+    return
+  }
+  const query = `SELECT TOP 400 ra, dec, phot_g_mean_mag AS g, pmra, pmdec
+    FROM gaiadr3.gaia_source
+    WHERE 1 = CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', ${ra}, ${dec}, ${radius}))
+      AND phot_g_mean_mag < 20.5
+    ORDER BY phot_g_mean_mag`
+  try {
+    const r = await fetch('https://gea.esac.esa.int/tap-server/tap/sync', {
+      method: 'POST',
+      body: new URLSearchParams({ REQUEST: 'doQuery', LANG: 'ADQL', FORMAT: 'csv', QUERY: query }),
+      signal: AbortSignal.timeout(30000),
+    })
+    const text = await r.text()
+    if (!r.ok || !text.startsWith('ra,')) throw new Error(`Gaia archive returned ${r.status}`)
+    const stars = text
+      .trim()
+      .split('\n')
+      .slice(1)
+      .map((line) => line.split(',').map((v) => (v === '' ? 0 : Number(v))))
+      .map(([sra, sdec, g, pmra, pmdec]) => ({ ra: sra, dec: sdec, g, pmra, pmdec }))
+    res.setHeader('Cache-Control', 'public, s-maxage=604800, max-age=86400')
+    res.json({ epoch: 2016.0, stars })
+  } catch (err) {
+    res.status(502).json({ error: `Gaia lookup failed: ${(err as Error).message}` })
   }
 })
 

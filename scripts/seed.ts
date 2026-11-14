@@ -12,6 +12,20 @@ const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SE
   auth: { persistSession: false },
 })
 
+async function upload(path: string, body: Buffer | string, contentType: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const { error } = await supabase.storage.from('frames').upload(path, body, { contentType, upsert: true })
+      if (!error) return
+      throw error
+    } catch (err) {
+      if (attempt >= 4) throw err
+      console.log(`  upload of ${path} failed (${(err as Error).message}), retrying`)
+      await new Promise((r) => setTimeout(r, 2000 * attempt))
+    }
+  }
+}
+
 const wanted = process.argv.slice(2)
 for (const target of TARGETS.filter((t) => wanted.length === 0 || wanted.includes(t.slug))) {
   const { ra, dec } = positionAt(target, SPHEREX_EPOCH)
@@ -52,15 +66,8 @@ for (const target of TARGETS.filter((t) => wanted.length === 0 || wanted.include
     frames: frames.map(({ pixels: _p, size: _s, ...meta }) => meta),
   }
 
-  const bucket = supabase.storage.from('frames')
-  const up1 = await bucket.upload(`${target.slug}/pixels.bin`, Buffer.from(pixels.buffer), {
-    contentType: 'application/octet-stream',
-    upsert: true,
-  })
-  const up2 = await bucket.upload(`${target.slug}/manifest.json`, JSON.stringify(manifest), {
-    contentType: 'application/json',
-    upsert: true,
-  })
-  if (up1.error || up2.error) throw up1.error ?? up2.error
+  // Pixels first, manifest last, so a reader never sees a manifest without its pixels.
+  await upload(`${target.slug}/pixels.bin`, Buffer.from(pixels.buffer), 'application/octet-stream')
+  await upload(`${target.slug}/manifest.json`, JSON.stringify(manifest), 'application/json')
   console.log(`  uploaded ${(pixels.byteLength / 1e6).toFixed(1)} MB`)
 }
