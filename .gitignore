@@ -1,0 +1,11 @@
+.hack/
+node_modules/
+.env
+.env.*
+.vercel/
+dist/
+venv/
+__pycache__/
+*.fits
+.vercel
+.env*
