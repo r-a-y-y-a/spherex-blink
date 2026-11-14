@@ -73,6 +73,8 @@ export const TARGETS: Target[] = [
     pmra: -20.643,
     pmdec: 6.149,
     bestDetector: 2,
+    // On the ecliptic pole, so SPHEREx sees it almost continuously: per-day frames show the pulsation.
+    defaults: { group: 'day' },
   },
 ]
 

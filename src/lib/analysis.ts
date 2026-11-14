@@ -35,16 +35,34 @@ export type Grouping = 'all' | 'visit' | 'day' | 'exposure'
 
 export type Group = { label: string; mjd: number; visit: number; indices: number[] }
 
-/** Survey visits: SPHEREx revisits a patch every ~6 months, so split on gaps over 30 days. */
+/**
+ * Survey passes: SPHEREx revisits most of the sky every ~6 months, so split on gaps over 30
+ * days. Near the ecliptic poles it observes continuously, so also cap a pass at 120 days.
+ */
 export function visitsOf(frames: FrameMeta[]): number[] {
   const order = frames.map((_, i) => i).sort((a, b) => frames[a].mjd - frames[b].mjd)
   const visit = new Array<number>(frames.length).fill(0)
   let v = 0
+  let start = order.length ? frames[order[0]].mjd : 0
   order.forEach((idx, k) => {
-    if (k > 0 && frames[idx].mjd - frames[order[k - 1]].mjd > 30) v++
+    const mjd = frames[idx].mjd
+    if (k > 0 && (mjd - frames[order[k - 1]].mjd > 30 || mjd - start > 120)) {
+      v++
+      start = mjd
+    }
     visit[idx] = v
   })
   return visit
+}
+
+/** Each pass named by its mean date. */
+export function visitNamesOf(frames: FrameMeta[], visits: number[]): string[] {
+  const sum: number[] = [], count: number[] = []
+  frames.forEach((f, i) => {
+    sum[visits[i]] = (sum[visits[i]] ?? 0) + f.mjd
+    count[visits[i]] = (count[visits[i]] ?? 0) + 1
+  })
+  return sum.map((s, v) => formatMonth(s / count[v]))
 }
 
 export function mjdToDate(mjd: number) {
@@ -62,6 +80,7 @@ export function groupFrames(
   range: [number, number],
   grouping: Grouping,
   skipFlagged = false,
+  visitNames: string[] = [],
 ): Group[] {
   const inBand = ds.frames
     .map((f, i) => ({ f, i }))
@@ -92,7 +111,7 @@ export function groupFrames(
       grouping === 'all'
         ? `${formatMonth(first)} – ${formatMonth(last)}`
         : grouping === 'visit'
-          ? formatMonth(mjd)
+          ? (visitNames[g.visit] ?? formatMonth(mjd))
           : formatDay(mjd)
     return { ...g, mjd, label }
   })

@@ -47,8 +47,8 @@ node --env-file=.env.local scripts/seed.ts wise-0855     # just one
 1. Landing page: "Watch the infrared sky move." Click **Barnard's Star**: the three survey passes play as a flipbook.
 2. Switch to **3′** and **Difference**: the fastest star in the sky leaves a blue/orange pair as it moves north.
 3. Open **WISE 0855** (opens as a smoothed deep stack with Gaia stars). At **D1** the light sits on a Gaia background star. Click **D6 (4.4-5.0 µm)**: the light shifts onto the dashed circle where the brown dwarf's motion predicts it.
-4. Click the object: its spectrum, with flagged exposures shown hollow.
-5. Open **R Draconis**: brightness over time across the passes. Copy the share link.
+4. Open **Epsilon Indi B**: the spectrum, built from hundreds of exposures that each see a slightly different wavelength, shows the methane bands of a T dwarf.
+5. Open **RW Aurigae**: its spectrum rises toward 5 µm (the dusty disk) and differs between survey passes, because the star varies. Copy the share link.
 
 ## Data credit
 

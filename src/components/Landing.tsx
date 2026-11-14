@@ -29,7 +29,7 @@ export function Landing({ onGo }: { onGo: (d: Destination) => void }) {
       <Starfield />
 
       <header className="relative mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-2.5 font-heading text-lg font-semibold">
+        <div className="flex items-center gap-2.5 font-heading text-lg font-semibold whitespace-nowrap">
           <span className="grid size-8 place-items-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
             <Telescope className="size-4.5" />
           </span>
@@ -39,9 +39,9 @@ export function Landing({ onGo }: { onGo: (d: Destination) => void }) {
           href="https://irsa.ipac.caltech.edu/Missions/spherex.html"
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
+          className="flex items-center gap-1 text-sm whitespace-nowrap text-muted-foreground transition hover:text-foreground"
         >
-          Data: NASA/IPAC IRSA <ArrowUpRight className="size-3.5" />
+          <span className="hidden sm:inline">Data:</span> NASA/IPAC IRSA <ArrowUpRight className="size-3.5" />
         </a>
       </header>
 

@@ -153,7 +153,7 @@ app.get('/api/resolve', async (req, res) => {
       const [ra2000, dec2000] = coo.split(/\s+/).map(Number)
       const [pmra, pmdec] = pm.split(/\s+/).map((v) => (v === '~' ? 0 : Number(v)))
       if (!Number.isFinite(ra2000) || !Number.isFinite(dec2000)) continue
-      res.json({ name: id, kind, ra2000, dec2000, pmra: pmra || 0, pmdec: pmdec || 0 })
+      res.json({ name: id.replace(/^NAME\s+/, ''), kind, ra2000, dec2000, pmra: pmra || 0, pmdec: pmdec || 0 })
       return
     } catch {
       // try the next host

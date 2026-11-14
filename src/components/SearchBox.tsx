@@ -46,6 +46,7 @@ export function SearchBox({ onGo, size = 'lg' }: { onGo: (d: Destination) => voi
   }
 
   const lg = size === 'lg'
+  const narrow = typeof window !== 'undefined' && window.matchMedia('(max-width: 520px)').matches
   return (
     <form onSubmit={submit} className="w-full">
       <div
@@ -58,7 +59,7 @@ export function SearchBox({ onGo, size = 'lg' }: { onGo: (d: Destination) => voi
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={lg ? 'Star name or coordinates, e.g. 08h55m10.8s −7d14m42s' : 'Name or RA Dec'}
+          placeholder={lg ? (narrow ? 'Star name or RA Dec' : 'Star name or coordinates, e.g. 08h55m10.8s −7d14m42s') : 'Name or RA Dec'}
           aria-label="Object name or sky coordinates"
           className={cn(
             'min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground/70',

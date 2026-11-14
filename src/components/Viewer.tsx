@@ -24,12 +24,12 @@ import {
   displayRange,
   fillHoles,
   formatDay,
-  formatMonth,
   groupFrames,
   medianStack,
   renderImage,
   smooth,
   subtractBackground,
+  visitNamesOf,
   visitsOf,
   WAVE_MAX,
   WAVE_MIN,
@@ -192,16 +192,11 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   }, [target?.slug, raIn, decIn])
 
   const visits = useMemo(() => (ds ? visitsOf(ds.frames) : []), [ds])
-  const visitNames = useMemo(() => {
-    if (!ds) return []
-    const names: string[] = []
-    ds.frames.forEach((f, i) => (names[visits[i]] ??= formatMonth(f.mjd)))
-    return names
-  }, [ds, visits])
+  const visitNames = useMemo(() => (ds ? visitNamesOf(ds.frames, visits) : []), [ds, visits])
 
   const groups = useMemo(
-    () => (ds ? groupFrames(ds, visits, range, grouping, skipFlagged) : []),
-    [ds, visits, range, grouping, skipFlagged],
+    () => (ds ? groupFrames(ds, visits, range, grouping, skipFlagged, visitNames) : []),
+    [ds, visits, range, grouping, skipFlagged, visitNames],
   )
   const stacks = useMemo(
     () => (ds ? groups.map((g) => fillHoles(subtractBackground(medianStack(ds, g.indices)), ds.size)) : []),
