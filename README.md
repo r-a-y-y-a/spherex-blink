@@ -1,0 +1,54 @@
+# SPHEREx Blink
+
+A public web tool for the NASA Space Apps 2026 challenge "Planet X and SPHEREx".
+Type a star name or sky coordinates and watch every NASA SPHEREx infrared image of that spot play as a flipbook, so moving and changing objects stand out.
+
+## What it does
+
+- Finds every SPHEREx Level 2 spectral image covering a position through the NASA/IPAC IRSA archive (TAP), including newly ingested quick-release data.
+- Reads only the needed pixels straight from NASA's public S3 copy of the archive with HTTP Range requests, then reprojects each frame north-up so frames taken at different spacecraft orientations line up.
+- Stacks frames per 6-month survey pass, per day, or shows every exposure, within any wavelength range from 0.75 to 5.0 microns (or one of the six detector bands).
+- Difference mode subtracts the median of all frames, so anything that moved or changed brightness stands out.
+- Click anywhere on the image to get a spectrum (every exposure samples a slightly different wavelength, so all of them together make a spectrum) and a brightness-over-time curve.
+- Pipeline quality flags (saturation, ghosts, streaks, cosmic rays and more) are read from each image's RICE-compressed FLAGS extension at the target. Flagged exposures show hollow in the spectrum, are listed per frame, and can be skipped.
+- Known movers show a dashed circle where catalogue proper motion predicts them on each date.
+- Every view is a shareable URL, e.g. `/?target=wise-0855&wmin=4.42&wmax=5.00&mode=diff` or `/?ra=133.75988&dec=-7.24220`. Add `&embed=1` to hide the header for embedding.
+- The five challenge targets (Barnard's Star, Epsilon Indi B, WISE 0855, RW Aurigae, R Draconis) are pre-cut into Supabase Storage so they load instantly.
+
+## Stack
+
+- Frontend: React, Vite, Tailwind, shadcn/ui (`src/`).
+- API: Express as a single Vercel function (`api/index.ts`): `/api/search` (archive search, cached in Supabase), `/api/resolve` (SIMBAD name lookup), `/api/health`.
+- Shared SPHEREx code (`src/lib/spherex/`): FITS header parsing, TAN-SIP WCS, wavelength lookup, Range-read cutouts. Runs in both the browser and Node.
+- Supabase: `searches` table (archive search cache, schema in `supabase/schema.sql`) and a public `frames` storage bucket.
+
+## Run it
+
+```sh
+npm install
+vercel link            # once, project "spherex-blink"
+vercel env pull .env.local
+vercel dev             # frontend + API on http://localhost:3000
+```
+
+Environment variables: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (server only) and `VITE_SUPABASE_URL` (frontend, public storage reads).
+
+Re-cut the demo targets (for example after a new data release):
+
+```sh
+node --env-file=.env.local scripts/seed.ts               # all five
+node --env-file=.env.local scripts/seed.ts wise-0855     # just one
+```
+
+## Demo script (30 s, recorded and sped up)
+
+1. Landing page: "Watch the infrared sky move." Click **Barnard's Star**.
+2. The flipbook plays the three survey passes. Switch the field of view to 3′ and **Difference**: the fastest star in the sky leaves a dark/bright pair as it moves.
+3. Open **WISE 0855**. Pick detector **D1**: nothing at the centre. Slide to **D6 (4.4-5.0 µm)**: the coldest known brown dwarf appears, exactly where its proper motion predicts.
+4. Click it: the spectrum shows its flux rising at 4.5 µm.
+5. Open **R Draconis**: the brightness-over-time chart shows the Mira variable changing between passes. Copy the share link.
+
+## Data credit
+
+SPHEREx Level 2 spectral images from NASA/IPAC Infrared Science Archive (IRSA).
+Object positions and proper motions from SIMBAD (CDS, Strasbourg).

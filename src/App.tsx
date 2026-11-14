@@ -1,50 +1,38 @@
-import { useState } from 'react'
-import { Telescope } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-
-type Frame = { url: string; mjd: number; detector: number; obsid: string }
-
-const WISE_0855 = { ra: 133.79513, dec: -7.24515 }
+import { Landing } from '@/components/Landing'
+import { Viewer } from '@/components/Viewer'
+import { findTarget } from '@/lib/targets'
+import type { Destination } from '@/components/SearchBox'
+import { useSearchParams } from '@/lib/url'
 
 export default function App() {
-  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
-  const [frames, setFrames] = useState<Frame[]>([])
-  const [error, setError] = useState('')
+  const [params, setParams] = useSearchParams()
 
-  async function search() {
-    setState('loading')
-    try {
-      const res = await fetch(`/api/search?ra=${WISE_0855.ra}&dec=${WISE_0855.dec}`)
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error ?? res.statusText)
-      setFrames(body.frames)
-      setState('done')
-    } catch (err) {
-      setError((err as Error).message)
-      setState('error')
-    }
-  }
+  const go = (d: Destination) =>
+    setParams(
+      'target' in d
+        ? { target: d.target }
+        : { ra: d.ra.toFixed(5), dec: d.dec.toFixed(5), name: d.name ?? null },
+      true,
+    )
+  const home = () => setParams({}, true)
 
-  const epochs = new Set(frames.map((f) => Math.floor(f.mjd))).size
+  const target = findTarget(params.get('target'))
+  const ra = Number(params.get('ra'))
+  const dec = Number(params.get('dec'))
+  const hasCoords = params.has('ra') && params.has('dec') && Number.isFinite(ra) && Number.isFinite(dec)
 
+  if (!target && !hasCoords) return <Landing onGo={go} />
   return (
-    <main className="dark min-h-svh bg-neutral-950 text-neutral-100 grid place-items-center p-6">
-      <div className="max-w-md text-center space-y-6">
-        <Telescope className="mx-auto size-12 text-sky-400" />
-        <h1 className="text-4xl font-semibold tracking-tight">SPHEREx Blink</h1>
-        <p className="text-neutral-400">
-          Watch the infrared sky change over time. Deploy check: search the SPHEREx archive for WISE 0855.
-        </p>
-        <Button size="lg" onClick={search} disabled={state === 'loading'}>
-          {state === 'loading' ? 'Searching the archive (about a minute)...' : 'Search WISE 0855'}
-        </Button>
-        {state === 'done' && (
-          <p className="text-emerald-400">
-            {frames.length} SPHEREx images across {epochs} observing days
-          </p>
-        )}
-        {state === 'error' && <p className="text-red-400">{error}</p>}
-      </div>
-    </main>
+    <Viewer
+      key={target?.slug ?? `${ra},${dec}`}
+      target={target}
+      ra={hasCoords ? ra : undefined}
+      dec={hasCoords ? dec : undefined}
+      name={params.get('name') ?? undefined}
+      params={params}
+      setParams={setParams}
+      onGo={go}
+      onHome={home}
+    />
   )
 }
