@@ -4,9 +4,7 @@
 
 **Blink through NASA SPHEREx images at light speeds to find moving worlds**
 
-## 🔭 [Try it live: blinkx-nasa.vercel.app](https://blinkx-nasa.vercel.app)
-
-No install, no sign-up: it opens on Barnard's Star and runs in any browser.
+## 🔭 [blinkx-nasa.vercel.app](https://blinkx-nasa.vercel.app)
 
 [![BLINKx showing WISE 0855, the coldest known brown dwarf, at 4.7 µm with NASA WISE confirming its motion](https://blinkx-nasa.vercel.app/readme-screenshot.png)](https://blinkx-nasa.vercel.app/?target=wise-0855&group=all&smooth=1&gaia=1&fov=32&bands=6&wise=1)
 
