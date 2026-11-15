@@ -161,15 +161,32 @@ function Section({
 }
 
 const TOOLS = [
-  { id: 'measure', label: 'Measure', hint: 'Measure: click the image to place the brightness aperture', icon: Crosshair },
-  { id: 'pin', label: 'Drop a pin', hint: 'Pin: click the image to mark a spot on the sky', icon: MapPin },
+  // Each mode wears the colour of what it draws: the orange aperture ring, the white pins.
+  {
+    id: 'measure',
+    label: 'Measure',
+    hint: 'Measure: click the image to place the brightness aperture',
+    icon: Crosshair,
+    active: 'bg-primary text-primary-foreground shadow-[0_0_14px_-2px] shadow-primary/70',
+  },
+  {
+    id: 'pin',
+    label: 'Drop a pin',
+    hint: 'Pin: click the image to mark a spot on the sky',
+    icon: MapPin,
+    active: 'bg-white text-black shadow-[0_0_14px_-2px] shadow-white/60',
+  },
 ] as const
 
 /** Icon toggle for what a click on the image does. */
 function ToolToggle({ tool, onChange }: { tool: 'measure' | 'pin'; onChange: (t: 'measure' | 'pin') => void }) {
   return (
-    <div role="group" aria-label="Click mode" className="flex shrink-0 rounded-full bg-muted p-0.5 ring-1 ring-white/5">
-      {TOOLS.map(({ id, label, hint, icon: Icon }) => (
+    <div
+      role="group"
+      aria-label="Click mode"
+      className="flex shrink-0 gap-0.5 rounded-full bg-black/50 p-1 ring-1 ring-white/20"
+    >
+      {TOOLS.map(({ id, label, hint, icon: Icon, active }) => (
         <button
           key={id}
           onClick={() => onChange(id)}
@@ -178,7 +195,7 @@ function ToolToggle({ tool, onChange }: { tool: 'measure' | 'pin'; onChange: (t:
           title={hint}
           className={cn(
             'grid size-8 place-items-center rounded-full transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-            tool === id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            tool === id ? active : 'text-foreground/70 hover:bg-white/10 hover:text-foreground',
           )}
         >
           <Icon className="size-4" />
