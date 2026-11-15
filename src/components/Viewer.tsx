@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Crosshair,
@@ -338,61 +337,73 @@ function TargetList({ current, onGo }: { current?: string; onGo: (d: { target: s
 }
 
 const DETECTORS = Object.entries(DETECTOR_BANDS).map(([d, [lo, hi]]) => ({ d: Number(d), lo, hi }))
-const near = (a: number, b: number) => Math.abs(a - b) < 0.005
+
+/** Detector bands as wavelength ranges, with touching bands (1.09 | 1.10 µm) merged into one. */
+function bandRanges(bands: number[]): [number, number][] {
+  const out: [number, number][] = []
+  for (const d of [...bands].sort((x, y) => x - y)) {
+    const [lo, hi] = DETECTOR_BANDS[d]
+    const last = out[out.length - 1]
+    if (last && lo - last[1] < 0.02) last[1] = hi
+    else out.push([lo, hi])
+  }
+  return out
+}
 
 /**
- * From/to detector dropdowns plus an "All" checkbox, kept in step with the range slider. A bound
- * dragged off a detector edge shows as its exact wavelength until a detector is picked again.
+ * D1-D6 toggles choosing which detector bands go into the image, plus an "All" checkbox. With a
+ * custom slider range, bands fully inside it show as on and bands it only clips show as partial.
  */
 function BandPicker({
+  bands,
   range,
-  onChange,
-  fallback,
+  onBands,
+  onAll,
 }: {
+  bands: number[] | null
   range: [number, number]
-  onChange: (r: [number, number]) => void
-  fallback: [number, number]
+  onBands: (b: number[]) => void
+  onAll: (on: boolean) => void
 }) {
-  const fromD = DETECTORS.find((x) => near(x.lo, range[0]))?.d
-  const toD = DETECTORS.find((x) => near(x.hi, range[1]))?.d
-  const all = range[0] <= WAVE_MIN + 0.005 && range[1] >= WAVE_MAX - 0.005
-  const pick = (end: 'from' | 'to', d: number) => {
-    const x = DETECTOR_BANDS[d]
-    if (end === 'from') onChange([x[0], range[1] > x[0] ? range[1] : x[1]])
-    else onChange([range[0] < x[1] ? range[0] : x[0], x[1]])
+  const covered = (x: (typeof DETECTORS)[number]) => range[0] <= x.lo + 0.005 && range[1] >= x.hi - 0.005
+  const isOn = (x: (typeof DETECTORS)[number]) => (bands ? bands.includes(x.d) : covered(x))
+  const isPartial = (x: (typeof DETECTORS)[number]) => !bands && !covered(x) && range[0] < x.hi && range[1] > x.lo
+  const on = DETECTORS.filter(isOn).map((x) => x.d)
+  const toggle = (d: number) => {
+    const next = on.includes(d) ? on.filter((x) => x !== d) : [...on, d]
+    if (next.length) onBands(next.sort((x, y) => x - y)) // at least one band stays on
   }
-  const select = (end: 'from' | 'to', value: number | undefined, edge: number) => (
-    <div className="relative min-w-0">
-      <select
-        aria-label={end === 'from' ? 'Shortest wavelength' : 'Longest wavelength'}
-        value={value ?? 'custom'}
-        onChange={(e) => pick(end, Number(e.target.value))}
-        className="tabular h-8 w-full min-w-0 appearance-none truncate rounded-md bg-muted pr-7 pl-2.5 font-mono text-xs text-foreground [color-scheme:dark] transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        {value === undefined && (
-          <option value="custom" disabled hidden>
-            {edge.toFixed(2)} µm
-          </option>
-        )}
-        {DETECTORS.map((x) => (
-          <option key={x.d} value={x.d}>
-            D{x.d} · {(end === 'from' ? x.lo : x.hi).toFixed(2)} µm
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-    </div>
-  )
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2">
-      {select('from', fromD, range[0])}
-      <span className="text-xs text-muted-foreground">to</span>
-      {select('to', toD, range[1])}
-      <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs font-medium whitespace-nowrap">
+    <div className="grid grid-cols-[repeat(6,minmax(0,1fr))_auto] items-center gap-1">
+      {DETECTORS.map((x) => {
+        const active = isOn(x)
+        const partial = isPartial(x)
+        return (
+          <button
+            key={x.d}
+            onClick={() => toggle(x.d)}
+            aria-pressed={active}
+            aria-label={`D${x.d}, ${x.lo.toFixed(2)}–${x.hi.toFixed(2)} µm${partial ? ', partly included' : ''}`}
+            title={`Detector ${x.d}: ${x.lo.toFixed(2)}–${x.hi.toFixed(2)} µm`}
+            className={cn(
+              'rounded-md py-1 text-center text-[11px] transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+              active
+                ? 'bg-primary text-primary-foreground'
+                : partial
+                  ? 'bg-primary/15 text-foreground ring-1 ring-primary/50 ring-inset'
+                  : 'bg-muted text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <div className="font-semibold">D{x.d}</div>
+            <div className="tabular font-mono text-[10px] opacity-80">{((x.lo + x.hi) / 2).toFixed(1)}</div>
+          </button>
+        )
+      })}
+      <label className="ml-1.5 flex cursor-pointer items-center gap-1.5 text-xs font-medium whitespace-nowrap">
         <input
           type="checkbox"
-          checked={all}
-          onChange={(e) => onChange(e.target.checked ? [WAVE_MIN, WAVE_MAX] : fallback)}
+          checked={on.length === DETECTORS.length}
+          onChange={(e) => onAll(e.target.checked)}
           className="size-4 accent-[var(--primary)]"
         />
         All
@@ -414,6 +425,14 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   const wMin = Number(params.get('wmin') ?? best[0])
   const wMax = Number(params.get('wmax') ?? best[1])
   const range = useMemo<[number, number]>(() => [wMin, wMax], [wMin, wMax])
+  // Chosen detector bands (?bands=1,4,6) take over from the slider range (?wmin/?wmax).
+  const bandsParam = params.get('bands')
+  const bands = useMemo(() => {
+    const b = [...new Set((bandsParam ?? '').split(',').map(Number))].filter((d) => DETECTOR_BANDS[d])
+    return b.length ? b.sort((x, y) => x - y) : null
+  }, [bandsParam])
+  const ranges = useMemo(() => (bands ? bandRanges(bands) : [range]), [bands, range])
+  const extent = useMemo<[number, number]>(() => [ranges[0][0], ranges[ranges.length - 1][1]], [ranges])
   const grouping = (params.get('group') as Grouping) ?? 'visit'
   const diff = params.get('mode') === 'diff'
   const cmap = (params.get('cmap') as Colormap) ?? 'ir'
@@ -462,8 +481,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   const visitNames = useMemo(() => (ds ? visitNamesOf(ds.frames, visits) : []), [ds, visits])
 
   const groups = useMemo(
-    () => (ds ? groupFrames(ds, visits, range, grouping, skipFlagged, visitNames) : []),
-    [ds, visits, range, grouping, skipFlagged, visitNames],
+    () => (ds ? groupFrames(ds, visits, ranges, grouping, skipFlagged, visitNames) : []),
+    [ds, visits, ranges, grouping, skipFlagged, visitNames],
   )
   const stacks = useMemo(
     () => (ds ? groups.map((g) => fillHoles(subtractBackground(medianStack(ds, g.indices)), ds.size)) : []),
@@ -528,7 +547,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     const id = setInterval(() => setFrameIdx((i) => (i + 1) % groups.length), 1000 / fps)
     return () => clearInterval(id)
   }, [playing, groups.length, fps])
-  useEffect(() => setFrameIdx(0), [grouping, range])
+  useEffect(() => setFrameIdx(0), [grouping, ranges])
 
   // Keyboard: space = play/pause, arrows = step. Handy when recording.
   useEffect(() => {
@@ -648,7 +667,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
       xLabel="Wavelength (µm)"
       yLabel="Flux (mJy)"
       xDomain={[WAVE_MIN, WAVE_MAX]}
-      band={range}
+      bands={ranges}
       height={big ? 480 : 190}
       width={big ? 1040 : 520}
     />
@@ -746,7 +765,20 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     setTimeout(() => setCopied(false), 1500)
   }
 
-  const bandLabel = `${range[0].toFixed(2)}–${range[1].toFixed(2)} µm`
+  const bandLabel = `${ranges.map(([lo, hi]) => `${lo.toFixed(2)}–${hi.toFixed(2)}`).join(' + ')} µm`
+  // On the image, a split band choice reads shorter as detector names (D1 + D3–D6).
+  const imageBandLabel =
+    bands && ranges.length > 1
+      ? bands
+          .reduce<number[][]>((runs, d) => {
+            const run = runs[runs.length - 1]
+            if (run && d === run[run.length - 1] + 1) run.push(d)
+            else runs.push([d])
+            return runs
+          }, [])
+          .map((r) => (r.length > 1 ? `D${r[0]}–D${r[r.length - 1]}` : `D${r[0]}`))
+          .join(' + ')
+      : bandLabel
   const loading = !ds || (progress && progress.phase === 'search')
 
   return (
@@ -962,7 +994,9 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   <span />
                 )}
                 <div className="shrink-0 rounded-lg bg-black/60 px-2.5 py-1.5 text-right backdrop-blur">
-                  <div className="tabular font-mono text-xs sm:text-sm">{bandLabel}</div>
+                  <div className="tabular font-mono text-xs sm:text-sm" title={bandLabel}>
+                    {imageBandLabel}
+                  </div>
                   <div className="hidden text-[11px] text-white/60 sm:block">{!diff
                       ? 'Infrared'
                       : refIdx < 0
@@ -1137,22 +1171,39 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
         {/* Controls and measurements */}
         <aside className="space-y-6 rounded-2xl border border-white/10 bg-card/80 p-5 backdrop-blur lg:max-h-[calc(100svh-7rem)] lg:overflow-y-auto">
           <Section title="Wavelength" info={HELP.wavelength} aside={<span className="tabular font-mono text-xs text-primary">{bandLabel}</span>}>
-            <div className="py-1" style={{ '--band-gradient': BAND_GRADIENT } as React.CSSProperties}>
+            <div className="relative py-1" style={{ '--band-gradient': BAND_GRADIENT } as React.CSSProperties}>
               <Slider
-                value={range}
+                value={extent}
                 min={WAVE_MIN}
                 max={WAVE_MAX}
                 step={0.01}
                 minStepsBetweenThumbs={5}
-                onValueChange={([a, b]) => setParams({ wmin: a.toFixed(2), wmax: b.toFixed(2) })}
+                onValueChange={([a, b]) => setParams({ bands: null, wmin: a.toFixed(2), wmax: b.toFixed(2) })}
                 aria-label="Wavelength range"
                 className="band-slider"
               />
+              {/* Bands left out between the chosen ones are dimmed on the track. */}
+              {ranges.slice(1).map(([lo], k) => {
+                const from = ranges[k][1]
+                const pct = (w: number) => ((w - WAVE_MIN) / (WAVE_MAX - WAVE_MIN)) * 100
+                return (
+                  <div
+                    key={k}
+                    aria-hidden
+                    className="pointer-events-none absolute top-1/2 h-2.5 -translate-y-1/2 bg-card/85"
+                    style={{ left: `${pct(from)}%`, width: `${pct(lo) - pct(from)}%` }}
+                  />
+                )
+              })}
             </div>
             <BandPicker
+              bands={bands}
               range={range}
-              onChange={([lo, hi]) => setParams({ wmin: lo.toFixed(2), wmax: hi.toFixed(2) })}
-              fallback={best}
+              onBands={(b) => setParams({ bands: b.join(','), wmin: null, wmax: null })}
+              onAll={(on) =>
+                // Off returns to the target's best band.
+                setParams(on ? { bands: null, wmin: WAVE_MIN.toFixed(2), wmax: WAVE_MAX.toFixed(2) } : { bands: null, wmin: null, wmax: null })
+              }
             />
           </Section>
 

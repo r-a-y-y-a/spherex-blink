@@ -10,7 +10,8 @@ type Props = {
   yLabel: string
   xDomain?: [number, number]
   xTicks?: (domain: [number, number]) => { v: number; label: string }[]
-  band?: [number, number]
+  /** Shaded x ranges (the chosen wavelength bands). */
+  bands?: [number, number][]
   height?: number
   /** Drawing width in SVG units; the chart scales to its box, so a wider chart keeps text the same size. */
   width?: number
@@ -29,7 +30,7 @@ function niceTicks(lo: number, hi: number, n = 4) {
   return out
 }
 
-export function ScatterChart({ points, seriesNames, xLabel, yLabel, xDomain, xTicks, band, height = 200, width = 520, empty }: Props) {
+export function ScatterChart({ points, seriesNames, xLabel, yLabel, xDomain, xTicks, bands, height = 200, width = 520, empty }: Props) {
   const [hover, setHover] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const H = height
@@ -107,15 +108,16 @@ export function ScatterChart({ points, seriesNames, xLabel, yLabel, xDomain, xTi
         role="img"
         aria-label={`${yLabel} against ${xLabel}`}
       >
-        {band && (
+        {bands?.map((band, k) => (
           <rect
+            key={k}
             x={sx(Math.max(band[0], xd[0]))}
             y={M.top}
             width={Math.max(0, sx(Math.min(band[1], xd[1])) - sx(Math.max(band[0], xd[0])))}
             height={H - M.top - M.bottom}
             fill="rgba(247,164,64,0.08)"
           />
-        )}
+        ))}
         {yt.map((v) => (
           <g key={v}>
             <line x1={M.left} x2={W - M.right} y1={sy(v)} y2={sy(v)} stroke="rgba(148,163,194,0.12)" />

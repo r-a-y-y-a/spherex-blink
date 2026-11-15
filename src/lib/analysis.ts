@@ -77,14 +77,14 @@ export const formatMonth = (mjd: number) => fmtMonth.format(mjdToDate(mjd))
 export function groupFrames(
   ds: Dataset,
   visits: number[],
-  range: [number, number],
+  ranges: [number, number][],
   grouping: Grouping,
   skipFlagged = false,
   visitNames: string[] = [],
 ): Group[] {
   const inBand = ds.frames
     .map((f, i) => ({ f, i }))
-    .filter(({ f }) => f.wave >= range[0] && f.wave <= range[1] && !(skipFlagged && f.flags))
+    .filter(({ f }) => ranges.some(([lo, hi]) => f.wave >= lo && f.wave <= hi) && !(skipFlagged && f.flags))
     .sort((a, b) => a.f.mjd - b.f.mjd)
   const groups = new Map<string, Group>()
   for (const { f, i } of inBand) {

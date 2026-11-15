@@ -13,15 +13,15 @@ export const HELP = {
     items: [
       {
         name: 'Range slider',
-        text: 'Picks which wavelengths are stacked into the image. A narrow range is a purer colour but uses fewer exposures, so it is noisier.',
+        text: 'Picks any continuous range of wavelengths to stack into the image (this replaces the band choice). A narrow range is a purer colour but uses fewer exposures, so it is noisier.',
       },
       {
-        name: 'From / to',
-        text: 'Pick the range by detector band: the first box sets the shortest wavelength, the second the longest. Choose the same detector in both to see one band. Stars are brightest in D1-D3; cold brown dwarfs like WISE 0855 only show up in D5-D6. After dragging the slider, the boxes show the exact wavelengths.',
+        name: 'D1-D6',
+        text: 'SPHEREx’s six detectors, each covering its own slice of wavelengths (the number under each is its middle, in µm). Click to switch a band on or off; the image stacks only the bands that are on, so you can combine any of them, such as D1 with D5-D6. Stars are brightest in D1-D3; cold brown dwarfs like WISE 0855 only show up in D5-D6. After dragging the slider, bands it only partly covers are outlined.',
       },
       {
         name: 'All',
-        text: 'Ticks itself whenever D1 to D6 are all included. Every wavelength at once gives the deepest image, but colour information is lost. Untick to go back to the target’s best band.',
+        text: 'Ticks itself when all six bands are on. Every wavelength at once gives the deepest image, but colour information is lost. Untick to go back to the target’s best band.',
       },
       {
         name: 'Use it to',
