@@ -16,6 +16,9 @@ export type Target = {
   defaults?: Record<string, string>
 }
 
+/** Shown when the site opens with no target or position in the URL. */
+export const DEFAULT_TARGET = 'barnards-star'
+
 export const TARGETS: Target[] = [
   {
     slug: 'wise-0855',

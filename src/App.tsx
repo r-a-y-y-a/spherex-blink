@@ -1,6 +1,6 @@
-import { Landing } from '@/components/Landing'
+import { useEffect } from 'react'
 import { Viewer } from '@/components/Viewer'
-import { findTarget } from '@/lib/targets'
+import { DEFAULT_TARGET, findTarget } from '@/lib/targets'
 import type { Destination } from '@/components/SearchBox'
 import { useSearchParams } from '@/lib/url'
 
@@ -14,14 +14,18 @@ export default function App() {
         : { ra: d.ra.toFixed(5), dec: d.dec.toFixed(5), name: d.name ?? null },
       true,
     )
-  const home = () => setParams({}, true)
 
-  const target = findTarget(params.get('target'))
   const ra = Number(params.get('ra'))
   const dec = Number(params.get('dec'))
   const hasCoords = params.has('ra') && params.has('dec') && Number.isFinite(ra) && Number.isFinite(dec)
+  // No target or position in the URL: open the default target, keeping any view options given.
+  const target = findTarget(params.get('target')) ?? (hasCoords ? undefined : findTarget(DEFAULT_TARGET))
 
-  if (!target && !hasCoords) return <Landing onGo={go} />
+  // Write the default into the URL so the address bar and share links name what is shown.
+  useEffect(() => {
+    if (!params.get('target') && !hasCoords) setParams({ target: DEFAULT_TARGET })
+  }, [params, hasCoords, setParams])
+
   return (
     <Viewer
       key={target?.slug ?? `${ra},${dec}`}
@@ -32,7 +36,6 @@ export default function App() {
       params={params}
       setParams={setParams}
       onGo={go}
-      onHome={home}
     />
   )
 }

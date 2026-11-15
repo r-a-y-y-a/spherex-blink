@@ -1,7 +1,7 @@
-# SPHEREx Blink
+# BLINKx
 
 A public web tool for the NASA Space Apps 2026 challenge "Planet X and SPHEREx".
-Type a star name or sky coordinates and watch every NASA SPHEREx infrared image of that spot play as a flipbook, so moving and changing objects stand out.
+It opens on Barnard's Star, with the five challenge targets in a sidebar. Type any star name or sky coordinates to watch every NASA SPHEREx infrared image of that spot play as a flipbook, so moving and changing objects stand out.
 
 ## What it does
 
@@ -48,7 +48,7 @@ node --env-file=.env.local scripts/seed.ts wise-0855     # just one
 
 ## Demo script (30 s, recorded and sped up)
 
-1. Landing page: "Watch the infrared sky move." Click **Barnard's Star**: the three survey passes play as a flipbook.
+1. The site opens on **Barnard's Star**: the three survey passes play as a flipbook. The other challenge targets are in the left sidebar.
 2. Switch to **3′** and **Difference**: the fastest star in the sky leaves a blue/orange pair as it moves north.
 3. Open **WISE 0855** (opens as a smoothed deep stack with Gaia stars). At **D1** the light sits on a Gaia background star. Click **D6 (4.4-5.0 µm)**: the light shifts onto the dashed circle where the brown dwarf's motion predicts it.
 4. Open **Epsilon Indi B**: the spectrum, built from hundreds of exposures that each see a slightly different wavelength, shows the methane bands of a T dwarf.

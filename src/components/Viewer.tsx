@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -50,7 +49,7 @@ import { HELP, type HelpTopic } from '@/lib/help'
 import { formatDec, formatRa } from '@/lib/coords'
 import { loadLive, loadSeeded, type LiveProgress } from '@/lib/data'
 import { PIXEL_ARCSEC } from '@/lib/spherex/cutout'
-import { mjdToYear, positionAt, type Target } from '@/lib/targets'
+import { DEFAULT_TARGET, TARGETS, mjdToYear, positionAt, type Target } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -61,7 +60,6 @@ type Props = {
   params: URLSearchParams
   setParams: (next: Record<string, string | null>, push?: boolean) => void
   onGo: (d: Destination) => void
-  onHome: () => void
 }
 
 const LIVE_SIZE = 64
@@ -293,11 +291,56 @@ function diffImages(stacks: Float32Array[], diff: boolean, ds: Dataset | null, r
   return stacks.map((s) => s.map((v, p) => v - ref[p]))
 }
 
+/**
+ * The challenge targets, preloaded so they open instantly. A column on desktop, a scrolling row
+ * of chips above the image on narrow screens.
+ */
+function TargetList({ current, onGo }: { current?: string; onGo: (d: { target: string }) => void }) {
+  return (
+    <nav aria-label="Challenge targets" className="min-w-0 lg:max-h-[calc(100svh-7rem)] lg:overflow-y-auto">
+      <h2 className="mb-2 hidden text-xs font-medium tracking-wide text-muted-foreground uppercase lg:block">
+        Challenge targets
+      </h2>
+      <ul className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+        {TARGETS.map((t) => {
+          const active = t.slug === current
+          const [lo, hi] = DETECTOR_BANDS[t.bestDetector]
+          return (
+            <li key={t.slug} className="shrink-0 lg:shrink">
+              <button
+                onClick={() => !active && onGo({ target: t.slug })}
+                aria-current={active ? 'page' : undefined}
+                title={t.blurb}
+                className={cn(
+                  'w-full rounded-xl border px-3 py-2 text-left transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:py-2.5',
+                  active
+                    ? 'border-primary/60 bg-primary/10'
+                    : 'border-white/10 bg-card/60 hover:border-white/25 hover:bg-card',
+                )}
+              >
+                <span className={cn('block text-[11px]', active ? 'text-primary' : 'text-muted-foreground')}>{t.kind}</span>
+                <span className="block font-heading text-sm font-semibold whitespace-nowrap">{t.name}</span>
+                {/* Blurbs only where there is height for all five cards with them (shown on hover otherwise). */}
+                <span className="mt-1 hidden text-xs leading-snug text-muted-foreground [@media(min-width:1024px)_and_(min-height:800px)]:line-clamp-2">
+                  {t.blurb}
+                </span>
+                <span className="tabular mt-1.5 hidden font-mono text-[10px] text-muted-foreground/80 lg:block">
+                  Best at {lo.toFixed(1)}–{hi.toFixed(1)} µm
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </nav>
+  )
+}
+
 /** Approximate colour of each wavelength, for the slider track (blue = shorter, red = longer). */
 const BAND_GRADIENT =
   'linear-gradient(90deg, #6d8dff 0%, #5fb4ff 12%, #5fe0c0 28%, #c8e65a 45%, #f7c040 62%, #f7863a 80%, #e2483c 100%)'
 
-export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, onGo, onHome }: Props) {
+export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, onGo }: Props) {
   const [ds, setDs] = useState<Dataset | null>(null)
   const [progress, setProgress] = useState<LiveProgress | null>(null)
   const [error, setError] = useState('')
@@ -645,13 +688,12 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     <div className="flex min-h-svh flex-col bg-[radial-gradient(ellipse_70%_50%_at_30%_-10%,rgba(56,98,180,0.22),transparent_70%)]">
       {!embed && (
         <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/10 px-5 py-3">
-          <button onClick={onHome} className="flex items-center gap-2 font-heading font-semibold">
-            <ArrowLeft className="size-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 font-heading font-semibold">
             <span className="grid size-7 place-items-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
               <Telescope className="size-4" />
             </span>
-            <span className="hidden sm:inline">SPHEREx Blink</span>
-          </button>
+            <span className="hidden sm:inline">BLINKx</span>
+          </div>
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-heading text-xl font-semibold">{title}</h1>
             <p className="tabular font-mono text-xs text-muted-foreground">
@@ -669,7 +711,13 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
         </header>
       )}
 
-      <main className="grid flex-1 gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_430px]">
+      <main
+        className={cn(
+          'grid flex-1 gap-5 p-5',
+          embed ? 'lg:grid-cols-[minmax(0,1fr)_430px]' : 'lg:grid-cols-[13.5rem_minmax(0,1fr)_430px]',
+        )}
+      >
+        {!embed && <TargetList current={target?.slug} onGo={onGo} />}
         {/* Sky */}
         <div className="flex min-w-0 flex-col items-center">
           <div className="grid w-full max-w-[min(100%,calc(100svh-10.875rem))] min-w-[280px] grid-cols-[3.75rem_minmax(0,1fr)] gap-x-1.5">
@@ -891,8 +939,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   <div className="max-w-sm space-y-3">
                     <p className="font-semibold">Couldn’t load this patch of sky</p>
                     <p className="text-sm text-muted-foreground">{error}</p>
-                    <Button variant="secondary" size="sm" onClick={onHome}>
-                      Back to targets
+                    <Button variant="secondary" size="sm" onClick={() => onGo({ target: DEFAULT_TARGET })}>
+                      Open Barnard’s Star
                     </Button>
                   </div>
                 ) : loading ? (
