@@ -14,7 +14,7 @@
 
 ## About
 
-BLINKx is our entry for the NASA Space Apps Challenge 2026 challenge "Planet X and SPHEREx".
+BLINKx is my entry for the NASA Space Apps Challenge 2026 challenge "Planet X and SPHEREx".
 Type any star name or sky coordinates and it plays every NASA SPHEREx infrared image of that spot as a flipbook, so anything that moves or changes stands out.
 Switch between SPHEREx's six wavelength bands, subtract frames to light up what moved, pin an object twice to measure its speed, and check what you find against the Gaia and NASA WISE catalogues.
 The five challenge targets load instantly from the sidebar; any other position is searched live in NASA's archive and loads in about 10-30 seconds.
@@ -102,18 +102,6 @@ Re-cut the demo targets (for example after a new data release):
 node --env-file=.env.local scripts/seed.ts               # all five
 node --env-file=.env.local scripts/seed.ts wise-0855     # just one
 ```
-
-## Demo script (30 s, recorded and sped up)
-
-1. The site opens on **Barnard's Star**, playing its three survey passes as a flipbook.
-2. Switch to **3′** and **Difference**: the fastest star in the sky leaves a blue/orange pair as it moves north.
-3. Back to **Image**, switch the toggle under the image to the pin, and pin the star in the first and last pass: 10.2″/yr north.
-4. Open **WISE 0855** from the sidebar.
-   With only **D1** on, the light sits on a Gaia background star.
-   With only **D6** on, it shifts onto the dashed circle where the brown dwarf's motion predicts it.
-   Turn on **WISE**: the catalogue tags it "WISE 8.1″/yr".
-5. Open **Epsilon Indi B** and enlarge the spectrum: the methane dips of a T dwarf.
-6. Type **TRAPPIST-1** in the search box: a position never seen before loads live from NASA's archive.
 
 ## Credits
 
