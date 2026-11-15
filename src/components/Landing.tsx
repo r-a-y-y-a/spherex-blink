@@ -1,26 +1,8 @@
-import { ArrowUpRight, Layers, Orbit, ScanSearch, Telescope } from 'lucide-react'
+import { ArrowUpRight, Telescope } from 'lucide-react'
 import { Starfield } from '@/components/Starfield'
 import { SearchBox, type Destination } from '@/components/SearchBox'
 import { DETECTOR_BANDS } from '@/lib/analysis'
 import { TARGETS } from '@/lib/targets'
-
-const STEPS = [
-  {
-    icon: ScanSearch,
-    title: 'Search the archive',
-    text: 'Every SPHEREx image that covers your patch of sky, from NASA/IPAC IRSA, including releases added this week.',
-  },
-  {
-    icon: Layers,
-    title: 'Cut and align',
-    text: 'Only the pixels you need are read from NASA’s cloud copy, then rotated north-up so every frame lines up.',
-  },
-  {
-    icon: Orbit,
-    title: 'Blink and measure',
-    text: 'Stack by visit and wavelength, play it like a flipbook, subtract to reveal movers, and pull a spectrum.',
-  },
-]
 
 export function Landing({ onGo }: { onGo: (d: Destination) => void }) {
   return (
@@ -47,10 +29,6 @@ export function Landing({ onGo }: { onGo: (d: Destination) => void }) {
 
       <main className="relative mx-auto max-w-6xl px-6">
         <section className="mx-auto max-w-3xl pt-16 pb-14 text-center md:pt-24">
-          <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground backdrop-blur">
-            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-            102 infrared colours · whole sky every 6 months · since May 2025
-          </p>
           <h1 className="font-heading text-5xl font-semibold leading-[1.05] md:text-7xl">
             Watch the infrared
             <br />
@@ -96,22 +74,6 @@ export function Landing({ onGo }: { onGo: (d: Destination) => void }) {
           </div>
         </section>
 
-        <section className="grid gap-6 border-t border-white/10 py-12 md:grid-cols-3">
-          {STEPS.map(({ icon: Icon, title, text }, i) => (
-            <div key={title} className="flex gap-4">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
-                <Icon className="size-5" />
-              </span>
-              <div>
-                <h3 className="font-semibold">
-                  <span className="mr-2 font-mono text-xs text-muted-foreground">0{i + 1}</span>
-                  {title}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">{text}</p>
-              </div>
-            </div>
-          ))}
-        </section>
       </main>
     </div>
   )
