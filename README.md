@@ -1,7 +1,18 @@
 # BLINKx
 
+**Live: [blinkx-nasa.vercel.app](https://blinkx-nasa.vercel.app)**
+
 A public web tool for the NASA Space Apps 2026 challenge "Planet X and SPHEREx".
-It opens on Barnard's Star, with the five challenge targets in a sidebar. Type any star name or sky coordinates to watch every NASA SPHEREx infrared image of that spot play as a flipbook, so moving and changing objects stand out.
+Type any star name or sky coordinates to watch every NASA SPHEREx infrared image of that spot play as a flipbook, so moving and changing objects stand out.
+It opens on Barnard's Star, with the five challenge targets in a sidebar.
+Any other position is searched live in NASA's archive and loads in about 10-30 seconds.
+
+## What it finds, checked on real data
+
+- **Barnard's Star moves.** Pinning it in the first and last survey pass measures 10.2″/yr due north; the catalogue proper motion is 10.4″/yr.
+- **WISE 0855, the coldest known brown dwarf, only appears in the reddest light.** At 0.9 µm (D1) the only light is a background Gaia star. At 4.4-5.0 µm (D6) the light sits on the spot its proper motion predicts, and NASA WISE's own catalogue marks the same object moving 8.1″/yr.
+- **Epsilon Indi B shows a T dwarf's methane bands.** Its spectrum, built from 458 exposures that each sample a slightly different wavelength, has the deep absorption dips of a cold brown dwarf.
+- **R Draconis varies.** It sits near the ecliptic pole, where SPHEREx looks almost every day, and its brightness changes several-fold across the year, as expected for a Mira variable. It is bright enough that some single-day points are affected by saturation, so read the trend rather than each point.
 
 ## What it does
 
@@ -18,14 +29,17 @@ It opens on Barnard's Star, with the five challenge targets in a sidebar. Type a
 - Pins, like Backyard Worlds marks: drop numbered pins that stay fixed on the sky while the flipbook plays, and pin a mover again in a later frame to measure its motion (arcsec/yr and direction). Pins are saved in the share link (`&pins=ra,dec,mjd;...`).
 - An (i) button beside each group of controls explains what it does and when to use it.
 - Known movers show a dashed circle where catalogue proper motion predicts them on each date.
-- Every view is a shareable URL, e.g. `/?target=wise-0855&wmin=4.42&wmax=5.00&mode=diff` or `/?ra=133.75988&dec=-7.24220`. Add `&embed=1` to hide the header for embedding.
+- Every view is a shareable URL, e.g. `/?target=wise-0855&bands=6&wise=1`, `/?target=barnards-star&mode=diff&ref=61270.86` (A − B against Aug 2026) or `/?ra=133.75988&dec=-7.24220`.
+  Parameters include `bands` (detector list), `wmin`/`wmax` (custom range), `group`, `mode=diff`, `ref`, `fov`, `smooth`, `gaia`, `wise`, `grid` and `pins`.
+  Add `&embed=1` to hide the header and sidebar for embedding.
 - The five challenge targets (Barnard's Star, Epsilon Indi B, WISE 0855, RW Aurigae, R Draconis) are pre-cut into Supabase Storage so they load instantly.
 
 ## Stack
 
 - Frontend: React, Vite, Tailwind, shadcn/ui (`src/`).
-- API: Express as a single Vercel function (`api/index.ts`): `/api/search` (archive search, cached in Supabase), `/api/cutouts` (batch frame cutting), `/api/gaia` (Gaia DR3 stars), `/api/wise` (CatWISE2020 sources and movers), `/api/resolve` (SIMBAD name lookup), `/api/health`.
+- API: Express as a single Vercel function (`api/index.ts`): `/api/search` (archive search, cached in Supabase), `/api/cutouts` (batch frame cutting), `/api/gaia` (Gaia DR3 stars, via IRSA with ESA's archive as a fallback), `/api/wise` (CatWISE2020 sources and movers), `/api/resolve` (SIMBAD name lookup), `/api/health`.
 - Shared SPHEREx code (`src/lib/spherex/`): FITS header parsing, TAN-SIP WCS, wavelength lookup, Range-read cutouts. Runs in both the browser and Node.
+- IRSA services are retried automatically, since they intermittently return fast 502 errors; catalogue lookups use IRSA's Gator cone search, which answers in seconds where TAP can take minutes.
 - Supabase: `searches` table (archive search cache, schema in `supabase/schema.sql`) and a public `frames` storage bucket.
 
 ## Run it
@@ -48,14 +62,15 @@ node --env-file=.env.local scripts/seed.ts wise-0855     # just one
 
 ## Demo script (30 s, recorded and sped up)
 
-1. The site opens on **Barnard's Star**: the three survey passes play as a flipbook. The other challenge targets are in the left sidebar.
+1. The site opens on **Barnard's Star**, playing its three survey passes as a flipbook.
 2. Switch to **3′** and **Difference**: the fastest star in the sky leaves a blue/orange pair as it moves north.
-3. Open **WISE 0855** (opens as a smoothed deep stack with Gaia stars). At **D1** the light sits on a Gaia background star. Switch **D1** off and **D6** on (4.4-5.0 µm): the light shifts onto the dashed circle where the brown dwarf's motion predicts it.
-4. Open **Epsilon Indi B**: the spectrum, built from hundreds of exposures that each see a slightly different wavelength, shows the methane bands of a T dwarf.
-5. Open **RW Aurigae**: its spectrum rises toward 5 µm (the dusty disk) and differs between survey passes, because the star varies. Copy the share link.
+3. Back to **Image**, switch the toggle under the image to the pin, and pin the star in the first and last pass: 10.2″/yr north.
+4. Open **WISE 0855** from the sidebar. With only **D1** on, the light sits on a Gaia background star. With only **D6** on, it shifts onto the dashed circle where the brown dwarf's motion predicts it. Turn on **WISE**: the catalogue tags it "WISE 8.1″/yr".
+5. Open **Epsilon Indi B** and enlarge the spectrum: the methane dips of a T dwarf.
+6. Type **TRAPPIST-1** in the search box: a position never seen before loads live from NASA's archive.
 
 ## Data credit
 
-SPHEREx Level 2 spectral images from NASA/IPAC Infrared Science Archive (IRSA).
+SPHEREx Level 2 spectral images from the NASA/IPAC Infrared Science Archive (IRSA), read from its public AWS S3 copy.
 Object positions and proper motions from SIMBAD (CDS, Strasbourg).
-Star overlays from ESA Gaia DR3 and NASA WISE (CatWISE2020), both via IRSA.
+Star overlays from ESA Gaia DR3 and NASA WISE (CatWISE2020, Marocco et al. 2021), both via IRSA.
