@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Crosshair,
+  X,
   Link2,
   LoaderCircle,
   Pause,
@@ -39,7 +40,8 @@ import {
   type Dataset,
   type Grouping,
 } from '@/lib/analysis'
-import { pixelToSky, skyTicks } from '@/lib/axes'
+import { pixelToSky, skyTicks, skyToPixel } from '@/lib/axes'
+import { motion, parsePins, serializePins, type Pin } from '@/lib/pins'
 import { HELP, type HelpTopic } from '@/lib/help'
 import { formatDec, formatRa } from '@/lib/coords'
 import { loadLive, loadSeeded, type LiveProgress } from '@/lib/data'
@@ -362,6 +364,28 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   const cmapShown: Colormap | 'diff' = diff ? 'diff' : cmap
 
   // What is under the pointer (or the aperture, on touch screens): position, pixel value, Gaia star.
+  // Pins: fixed sky positions that persist across frames, bands and zoom (and the share link).
+  const pinsParam = params.get('pins')
+  const pins = useMemo(() => parsePins(pinsParam), [pinsParam])
+  const [tool, setTool] = useState<'measure' | 'pin'>('measure')
+  const setPins = (next: Pin[]) => setParams({ pins: serializePins(next) })
+  const pinPx = useMemo(
+    () => (ds ? pins.map((p) => skyToPixel(p.ra, p.dec, ds.ra, ds.dec, size)) : []),
+    [pins, ds, size],
+  )
+  const pinRef = useMemo(() => (pins.length ? pins.reduce((a, b) => (b.mjd < a.mjd ? b : a)) : null), [pins])
+
+  function onImageClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    const [x, y] = toPixel(e)
+    if (tool === 'measure' || !ds || !group) {
+      setApert([x, y])
+      return
+    }
+    const hit = pinPx.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 1.5)
+    if (hit >= 0) setPins(pins.filter((_, k) => k !== hit))
+    else setPins([...pins, { ...pixelToSky(x, y, ds.ra, ds.dec, size), mjd: group.mjd }].slice(0, 20))
+  }
+
   const probe = hover ?? apert
   const readout = useMemo(() => {
     if (!probe || !ds || !images[current]) return null
@@ -449,7 +473,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             {images.length > 0 && (
               <canvas
                 ref={canvasRef}
-                onClick={(e) => setApert(toPixel(e))}
+                onClick={onImageClick}
                 onMouseMove={(e) => setHover(toPixel(e))}
                 onMouseLeave={() => setHover(null)}
                 className="pixelated size-full cursor-crosshair"
@@ -487,6 +511,26 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   style={{ ...pct(p.x, p.y), width: `${Math.max(1.2, 3.2 - (p.g - 12) * 0.25) * (64 / crop.n)}%`, aspectRatio: '1' }}
                 />
               ))}
+
+            {/* Pins: a reticle with a gap, so whatever sits under the pin stays visible. */}
+            {images.length > 0 &&
+              pinPx.map((p, k) =>
+                p.x < crop.x0 - 0.5 || p.x > crop.x0 + crop.n - 0.5 || p.y < crop.y0 - 0.5 || p.y > crop.y0 + crop.n - 0.5 ? null : (
+                  <div
+                    key={k}
+                    className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]"
+                    style={{ ...pct(p.x, p.y), width: `${(Math.max(2.6, 0.06 * crop.n) / crop.n) * 100}%`, aspectRatio: '1' }}
+                  >
+                    <span className="absolute top-0 left-1/2 h-[30%] w-0.5 -translate-x-1/2 bg-white" />
+                    <span className="absolute bottom-0 left-1/2 h-[30%] w-0.5 -translate-x-1/2 bg-white" />
+                    <span className="absolute top-1/2 left-0 h-0.5 w-[30%] -translate-y-1/2 bg-white" />
+                    <span className="absolute top-1/2 right-0 h-0.5 w-[30%] -translate-y-1/2 bg-white" />
+                    <span className="tabular absolute bottom-full left-full -translate-x-1/3 translate-y-1/3 rounded bg-white px-1 font-mono text-[10px] leading-4 font-semibold text-black">
+                      {k + 1}
+                    </span>
+                  </div>
+                ),
+              )}
 
             {/* Predicted catalogue position and measurement aperture */}
             {images.length > 0 && predicted && (
@@ -646,6 +690,26 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             <InfoButton topic={HELP.image} className="shrink-0" />
           </div>
 
+          {/* What a click on the image does. */}
+          <div className="col-start-2 mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+            <span className="text-muted-foreground">Click the image to</span>
+            <div className="w-52">
+              <Segmented
+                value={tool}
+                options={[
+                  { id: 'measure', label: 'Measure' },
+                  { id: 'pin', label: 'Drop a pin' },
+                ]}
+                onChange={setTool}
+              />
+            </div>
+            {pins.length > 0 && (
+              <button onClick={() => setPins([])} className="text-muted-foreground hover:text-foreground">
+                Clear {pins.length} pin{pins.length > 1 ? 's' : ''}
+              </button>
+            )}
+          </div>
+
           {/* Transport */}
           <div className="col-start-2 mt-3 flex items-center gap-3">
             <Button size="icon" variant="secondary" onClick={() => setFrameIdx((i) => (i - 1 + groups.length) % Math.max(1, groups.length))} aria-label="Previous frame">
@@ -796,12 +860,14 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             title={apert ? 'Spectrum at the ring' : 'Spectrum at the centre'}
             info={HELP.spectrum}
             aside={
-              <button
-                onClick={() => setApert(null)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <Crosshair className="size-3.5" /> {apert ? 'Reset to centre' : 'Click the image to move'}
-              </button>
+              apert && (
+                <button
+                  onClick={() => setApert(null)}
+                  className="flex items-center gap-1 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground"
+                >
+                  <Crosshair className="size-3.5" /> Reset to centre
+                </button>
+              )
             }
           >
             <ScatterChart
@@ -832,6 +898,67 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               height={170}
               empty="Not enough frames in this band"
             />
+          </Section>
+
+          <Section
+            title="Pins"
+            info={HELP.pins}
+            aside={
+              pins.length > 0 && (
+                <button onClick={() => setPins([])} className="text-xs text-muted-foreground hover:text-foreground">
+                  Clear all
+                </button>
+              )
+            }
+          >
+            {pins.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Choose <span className="text-foreground">Drop a pin</span> under the image and click a spot. Pin the same
+                object again in a later frame to measure how fast it moves.
+              </p>
+            ) : (
+              <ol className="space-y-1.5">
+                {pins.map((p, k) => {
+                  const m = pinRef && p !== pinRef ? motion(pinRef, p) : null
+                  const refNo = pinRef ? pins.indexOf(pinRef) + 1 : 1
+                  return (
+                    <li key={k} className="flex items-start gap-2.5 rounded-lg bg-muted px-2.5 py-2 text-xs">
+                      <span className="tabular mt-px grid size-5 shrink-0 place-items-center rounded bg-white font-mono text-[11px] font-semibold text-black">
+                        {k + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap gap-x-2">
+                          <span className="font-medium">{formatDay(p.mjd)}</span>
+                          <span className="tabular font-mono text-muted-foreground">
+                            {formatRa(p.ra)} {formatDec(p.dec)}
+                          </span>
+                        </div>
+                        {m && (
+                          <div className="mt-0.5 text-muted-foreground">
+                            {m.sep.toFixed(1)}″ {m.direction} of pin {refNo}
+                            {m.rate !== null ? (
+                              <>
+                                {' '}over {m.years.toFixed(2)} yr ={' '}
+                                <span className="text-foreground">{m.rate.toFixed(1)}″/yr</span>
+                              </>
+                            ) : (
+                              ', placed on the same date'
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setPins(pins.filter((_, j) => j !== k))}
+                        aria-label={`Remove pin ${k + 1}`}
+                        className="-m-1 grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </li>
+                  )
+                })}
+              </ol>
+            )}
           </Section>
 
           {ds && (

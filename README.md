@@ -14,6 +14,7 @@ Type a star name or sky coordinates and watch every NASA SPHEREx infrared image 
 - Gaia DR3 stars can be overlaid, each moved to the frame's date with its proper motion.
 - Live positions are cut by the API in batches, in the same AWS region as NASA's S3 bucket (browsers only get 6 connections to S3).
 - RA/Dec axis labels on the image edges, an optional coordinate grid, a colour bar in MJy/sr, and a readout of the sky position, pixel value and any Gaia star under the pointer.
+- Pins, like Backyard Worlds marks: drop numbered pins that stay fixed on the sky while the flipbook plays, and pin a mover again in a later frame to measure its motion (arcsec/yr and direction). Pins are saved in the share link (`&pins=ra,dec,mjd;...`).
 - An (i) button beside each group of controls explains what it does and when to use it.
 - Known movers show a dashed circle where catalogue proper motion predicts them on each date.
 - Every view is a shareable URL, e.g. `/?target=wise-0855&wmin=4.42&wmax=5.00&mode=diff` or `/?ra=133.75988&dec=-7.24220`. Add `&embed=1` to hide the header for embedding.

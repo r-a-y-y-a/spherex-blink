@@ -104,6 +104,7 @@ export const HELP = {
       { name: 'Dashed blue circle', text: 'Where the catalogue (SIMBAD) proper motion predicts the target on this frame’s date.' },
       { name: 'Orange ring', text: 'Your measuring aperture. Click anywhere on the image to place it; the charts update.' },
       { name: 'Green rings', text: 'Gaia DR3 stars, when Gaia stars is on.' },
+      { name: 'White numbered marks', text: 'Your pins. They stay on the same spot in the sky in every frame.' },
       { name: 'Edge labels', text: 'Right ascension along the bottom and declination up the left side.' },
       {
         name: 'Readout',
@@ -134,6 +135,29 @@ export const HELP = {
       {
         name: 'Use it to',
         text: 'Spot variable stars (brightness changes) and movers (the brightness drops as the object leaves a fixed aperture).',
+      },
+    ],
+  },
+  pins: {
+    title: 'Pins',
+    intro:
+      'Mark a spot the way Backyard Worlds volunteers do. A pin is fixed to the sky, not to the object, so anything that moves drifts away from it as the flipbook plays.',
+    items: [
+      {
+        name: 'Drop a pin',
+        text: 'Choose “Drop a pin”, then click the image. Click a pin again to remove it. Pins stay put when you change wavelength, frames or zoom, and are saved in the share link.',
+      },
+      {
+        name: 'Track a mover',
+        text: 'Pin an object in one frame, step to a later frame, and pin it again where it now is. The list shows how far it moved, in which direction, and its speed in arcseconds per year, measured from the earliest pin.',
+      },
+      {
+        name: 'Is it real?',
+        text: 'A real mover shifts steadily in one direction over the passes and appears at the same place in every band where it is bright. Noise and artefacts jump around or appear in only one frame.',
+      },
+      {
+        name: 'For scale',
+        text: 'One pixel is 6.15″. Barnard’s Star, the fastest star in the sky, moves about 10″ per year.',
       },
     ],
   },
