@@ -73,7 +73,7 @@ export function skyTicks(ra0: number, dec0: number, crop: Crop): { ra: Tick[]; d
     for (let v = Math.ceil(raRightS / rStep) * rStep; v <= raRightS + spanS; v += rStep) {
       const x = half - ((v - (ra0 * 3600) / 15) * 15 * cosd) / PIXEL_ARCSEC
       const pos = (x - xL) / (xR - xL)
-      if (pos > 0.08 && pos < 0.92) ra.push({ pos, label: fmtRaTick(v) })
+      if (pos > 0.13 && pos < 0.87) ra.push({ pos, label: fmtRaTick(v) })
     }
   }
   return { ra, dec }

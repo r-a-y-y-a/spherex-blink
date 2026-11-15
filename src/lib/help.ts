@@ -102,7 +102,7 @@ export const HELP = {
     intro: 'North is up and east is left, as on a sky chart. Every frame is real SPHEREx data, reprojected so all frames line up.',
     items: [
       { name: 'Dashed blue circle', text: 'Where the catalogue (SIMBAD) proper motion predicts the target on this frame’s date.' },
-      { name: 'Orange ring', text: 'Your measuring aperture. Click anywhere on the image to place it; the charts update.' },
+      { name: 'Orange ring', text: 'Your measuring aperture. With the crosshair icon selected under the image, click anywhere to place it; the charts update.' },
       { name: 'Green rings', text: 'Gaia DR3 stars, when Gaia stars is on.' },
       { name: 'White numbered marks', text: 'Your pins. They stay on the same spot in the sky in every frame.' },
       { name: 'Edge labels', text: 'Right ascension along the bottom and declination up the left side.' },
@@ -145,7 +145,7 @@ export const HELP = {
     items: [
       {
         name: 'Drop a pin',
-        text: 'Choose “Drop a pin”, then click the image. Click a pin again to remove it. Pins stay put when you change wavelength, frames or zoom, and are saved in the share link.',
+        text: 'Switch the toggle under the image to the pin icon, then click the image. Click a pin again to remove it. Pins stay put when you change wavelength, frames or zoom, and are saved in the share link.',
       },
       {
         name: 'Track a mover',

@@ -17,10 +17,14 @@ export function InfoButton({ topic, className }: { topic: HelpTopic; className?:
       >
         <Info className="size-3.5" />
       </PopoverTrigger>
+      {/* Opens beside the side panel on desktop (flipping or shifting when there is no room), and
+          never taller than the space Radix measures as free, so long help scrolls instead of clipping. */}
       <PopoverContent
+        side="left"
         align="start"
+        sideOffset={12}
         collisionPadding={12}
-        className="max-h-[min(70svh,520px)] w-[min(22rem,calc(100vw-24px))] gap-3 overflow-y-auto border border-white/10 bg-popover/95 p-4 backdrop-blur"
+        className="max-h-[min(var(--radix-popover-content-available-height),560px)] w-[min(22rem,calc(100vw-24px))] gap-3 overflow-y-auto overscroll-contain border border-white/10 bg-popover/95 p-4 backdrop-blur"
       >
         <div>
           <p className="font-heading font-semibold">{topic.title}</p>

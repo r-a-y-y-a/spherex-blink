@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Crosshair,
+  MapPin,
   X,
   Link2,
   LoaderCircle,
@@ -38,6 +39,7 @@ import {
   WAVE_MIN,
   type Colormap,
   type Dataset,
+  type Group,
   type Grouping,
 } from '@/lib/analysis'
 import { pixelToSky, skyTicks, skyToPixel } from '@/lib/axes'
@@ -140,6 +142,98 @@ function Section({
       </div>
       {children}
     </section>
+  )
+}
+
+const TOOLS = [
+  { id: 'measure', label: 'Measure', hint: 'Measure: click the image to place the brightness aperture', icon: Crosshair },
+  { id: 'pin', label: 'Drop a pin', hint: 'Pin: click the image to mark a spot on the sky', icon: MapPin },
+] as const
+
+/** Icon toggle for what a click on the image does. */
+function ToolToggle({ tool, onChange }: { tool: 'measure' | 'pin'; onChange: (t: 'measure' | 'pin') => void }) {
+  return (
+    <div role="group" aria-label="Click mode" className="flex shrink-0 rounded-full bg-muted p-0.5 ring-1 ring-white/5">
+      {TOOLS.map(({ id, label, hint, icon: Icon }) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          aria-label={label}
+          aria-pressed={tool === id}
+          title={hint}
+          className={cn(
+            'grid size-8 place-items-center rounded-full transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+            tool === id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Above this many frames, separate bars would be thinner than their gaps, so draw one scrubber. */
+const MAX_SEGMENTS = 40
+
+/** Frame timeline: one bar per frame when there are few, a continuous scrubber when there are many. */
+function Timeline({ groups, current, onSeek }: { groups: Group[]; current: number; onSeek: (k: number) => void }) {
+  const n = groups.length
+  if (n <= MAX_SEGMENTS)
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        {groups.map((g, k) => (
+          <button key={k} onClick={() => onSeek(k)} title={g.label} className="group flex h-7 min-w-0 flex-1 items-center">
+            <span
+              className={cn('h-1.5 w-full rounded-full transition', k === current ? 'h-2.5' : 'opacity-40 group-hover:opacity-80')}
+              style={{ background: VISIT_COLORS[g.visit % VISIT_COLORS.length] }}
+            />
+          </button>
+        ))}
+      </div>
+    )
+
+  // Runs of consecutive frames from the same survey pass, drawn as one coloured stretch each.
+  const runs: { visit: number; start: number; len: number }[] = []
+  groups.forEach((g, k) => {
+    const last = runs[runs.length - 1]
+    if (last && last.visit === g.visit) last.len++
+    else runs.push({ visit: g.visit, start: k, len: 1 })
+  })
+  const seekAt = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    onSeek(Math.min(n - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * n))))
+  }
+  return (
+    <div
+      role="slider"
+      aria-label="Frame"
+      aria-valuemin={1}
+      aria-valuemax={n}
+      aria-valuenow={current + 1}
+      aria-valuetext={groups[current]?.label}
+      title={groups[current]?.label}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        seekAt(e)
+      }}
+      onPointerMove={(e) => e.buttons === 1 && seekAt(e)}
+      className="relative flex h-7 min-w-0 flex-1 cursor-pointer touch-none items-center"
+    >
+      <div className="flex h-1.5 w-full gap-0.5">
+        {runs.map((r) => (
+          <span
+            key={r.start}
+            className="h-full rounded-full opacity-50"
+            style={{ flexGrow: r.len, flexBasis: 0, background: VISIT_COLORS[r.visit % VISIT_COLORS.length] }}
+          />
+        ))}
+      </div>
+      <span
+        className="pointer-events-none absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_6px_rgba(0,0,0,0.8)]"
+        style={{ left: `${((current + 0.5) / n) * 100}%` }}
+      />
+    </div>
   )
 }
 
@@ -455,14 +549,14 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
       <main className="grid flex-1 gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_430px]">
         {/* Sky */}
         <div className="flex min-w-0 flex-col items-center">
-          <div className="grid w-full max-w-[min(100%,calc(100svh-190px))] min-w-[280px] grid-cols-[16px_minmax(0,1fr)] gap-x-1.5">
-          {/* Declination labels, reading bottom to top like a plot axis. */}
+          <div className="grid w-full max-w-[min(100%,calc(100svh-170px))] min-w-[280px] grid-cols-[3.75rem_minmax(0,1fr)] gap-x-1.5">
+          {/* Declination labels, horizontal and right-aligned against the image edge. */}
           <div className="relative" aria-hidden>
             {images.length > 0 &&
               ticks.dec.map((t) => (
                 <span
                   key={t.label}
-                  className="tabular absolute right-0 -translate-y-1/2 rotate-180 font-mono text-[10px] whitespace-nowrap text-muted-foreground [writing-mode:vertical-rl]"
+                  className="tabular absolute right-0 -translate-y-1/2 font-mono text-[10px] whitespace-nowrap text-muted-foreground"
                   style={{ top: `${(1 - t.pos) * 100}%` }}
                 >
                   {t.label}
@@ -555,7 +649,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-2">
                 {group ? (
                   <div className="min-w-0 rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur">
-                    <div className="tabular font-heading text-lg font-semibold leading-tight sm:text-2xl sm:leading-none">{group.label}</div>
+                    <div className="tabular font-heading text-lg font-semibold leading-tight whitespace-nowrap sm:text-2xl sm:leading-none">{group.label}</div>
                     <div className="mt-1 text-xs text-white/70">
                       {grouping === 'all'
                         ? `All ${visitNames.length} survey passes`
@@ -571,13 +665,13 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 )}
                 <div className="shrink-0 rounded-lg bg-black/60 px-2.5 py-1.5 text-right backdrop-blur">
                   <div className="tabular font-mono text-xs sm:text-sm">{bandLabel}</div>
-                  <div className="text-[11px] text-white/60">{diff ? 'Difference from median' : 'Infrared'}</div>
+                  <div className="hidden text-[11px] text-white/60 sm:block">{diff ? 'Difference from median' : 'Infrared'}</div>
                   {/* Colour bar: the brightness each colour stands for. */}
                   <div className="mt-1.5 flex items-center justify-end gap-1.5 font-mono text-[10px] text-white/70">
                     <span className="tabular">{fmtVal(limits[0])}</span>
                     <span className="h-1.5 w-10 rounded-full ring-1 ring-white/15 sm:w-12" style={{ background: colormapGradient(cmapShown) }} />
                     <span className="tabular">{fmtVal(limits[1])}</span>
-                    <span className="font-sans text-white/50">MJy/sr</span>
+                    <span className="hidden font-sans text-white/50 sm:inline">MJy/sr</span>
                   </div>
                 </div>
               </div>
@@ -684,30 +778,17 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   )}
                 </>
               ) : (
-                <span className="font-sans">{images.length ? 'Point at the image for coordinates and brightness' : '\u00a0'}</span>
+                <span className="font-sans">
+                  {!images.length
+                    ? '\u00a0'
+                    : tool === 'pin'
+                      ? 'Click the image to drop a pin, click a pin to remove it'
+                      : 'Point at the image for coordinates, click to measure'}
+                </span>
               )}
             </div>
+            <ToolToggle tool={tool} onChange={setTool} />
             <InfoButton topic={HELP.image} className="shrink-0" />
-          </div>
-
-          {/* What a click on the image does. */}
-          <div className="col-start-2 mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-            <span className="text-muted-foreground">Click the image to</span>
-            <div className="w-52">
-              <Segmented
-                value={tool}
-                options={[
-                  { id: 'measure', label: 'Measure' },
-                  { id: 'pin', label: 'Drop a pin' },
-                ]}
-                onChange={setTool}
-              />
-            </div>
-            {pins.length > 0 && (
-              <button onClick={() => setPins([])} className="text-muted-foreground hover:text-foreground">
-                Clear {pins.length} pin{pins.length > 1 ? 's' : ''}
-              </button>
-            )}
           </div>
 
           {/* Transport */}
@@ -721,24 +802,17 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             <Button size="icon" variant="secondary" onClick={() => setFrameIdx((i) => (i + 1) % Math.max(1, groups.length))} aria-label="Next frame">
               <ChevronRight />
             </Button>
-            <div className="flex min-w-0 flex-1 items-center gap-1">
-              {groups.map((g, k) => (
-                <button
-                  key={k}
-                  onClick={() => {
-                    setPlaying(false)
-                    setFrameIdx(k)
-                  }}
-                  title={g.label}
-                  className="group flex h-7 min-w-0 flex-1 items-center"
-                >
-                  <span
-                    className={cn('h-1.5 w-full rounded-full transition', k === current ? 'h-2.5' : 'opacity-40 group-hover:opacity-80')}
-                    style={{ background: VISIT_COLORS[g.visit % VISIT_COLORS.length] }}
-                  />
-                </button>
-              ))}
-            </div>
+            <Timeline
+              groups={groups}
+              current={current}
+              onSeek={(k) => {
+                setPlaying(false)
+                setFrameIdx(k)
+              }}
+            />
+            <span className="tabular hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">
+              {groups.length ? current + 1 : 0}/{groups.length}
+            </span>
             <div className="flex w-28 items-center gap-2">
               <Slider value={[fps]} min={0.5} max={12} step={0.5} onValueChange={([v]) => setFps(v)} aria-label="Playback speed" />
               <span className="tabular w-9 font-mono text-xs text-muted-foreground">{fps}/s</span>
@@ -748,7 +822,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
         </div>
 
         {/* Controls and measurements */}
-        <aside className="space-y-6 rounded-2xl border border-white/10 bg-card/80 p-5 backdrop-blur lg:max-h-[calc(100svh-90px)] lg:overflow-y-auto">
+        <aside className="space-y-6 rounded-2xl border border-white/10 bg-card/80 p-5 backdrop-blur lg:max-h-[calc(100svh-112px)] lg:overflow-y-auto">
           <Section title="Wavelength" info={HELP.wavelength} aside={<span className="tabular font-mono text-xs text-primary">{bandLabel}</span>}>
             <div className="py-1" style={{ '--band-gradient': BAND_GRADIENT } as React.CSSProperties}>
               <Slider
@@ -913,8 +987,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
           >
             {pins.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Choose <span className="text-foreground">Drop a pin</span> under the image and click a spot. Pin the same
-                object again in a later frame to measure how fast it moves.
+                Switch the toggle under the image to the <MapPin className="inline size-3.5 align-[-2px] text-foreground" /> pin,
+                then click a spot. Pin the same object again in a later frame to measure how fast it moves.
               </p>
             ) : (
               <ol className="space-y-1.5">
