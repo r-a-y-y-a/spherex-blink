@@ -29,8 +29,12 @@ Any other position is searched live in NASA's archive and loads in about 10-30 s
 - Pins, like Backyard Worlds marks: drop numbered pins that stay fixed on the sky while the flipbook plays, and pin a mover again in a later frame to measure its motion (arcsec/yr and direction). Pins are saved in the share link (`&pins=ra,dec,mjd;...`).
 - An (i) button beside each group of controls explains what it does and when to use it.
 - Known movers show a dashed circle where catalogue proper motion predicts them on each date.
+- Explore mode: arrow tabs on the image edges (or Shift + arrow keys) step the view one field north, south, east or west, with a little overlap, to sweep the sky around a target the way Backyard Worlds volunteers do.
+  The header shows Explore mode, how far you are from where you started, and a link back.
+  The four neighbouring views are preloaded in the background, so a step usually shows its image in well under a second, and a step reuses the image list of the spot before it instead of searching the archive again.
+  Share links keep the exact explored spot (`ra`, `dec`, plus `origin` and `near` for where exploring started), and open quickly even when NASA's archive search is slow, because the start's image list seeds them.
 - Every view is a shareable URL, e.g. `/?target=wise-0855&bands=6&wise=1`, `/?target=barnards-star&mode=diff&ref=61270.86` (A − B against Aug 2026) or `/?ra=133.75988&dec=-7.24220`.
-  Parameters include `bands` (detector list), `wmin`/`wmax` (custom range), `group`, `mode=diff`, `ref`, `fov`, `smooth`, `gaia`, `wise`, `grid` and `pins`.
+  Parameters include `bands` (detector list), `wmin`/`wmax` (custom range), `group`, `mode=diff`, `ref`, `fov`, `smooth`, `gaia`, `wise`, `grid`, `pins`, and `origin`/`near` in Explore mode.
   Add `&embed=1` to hide the header and sidebar for embedding.
 - The five challenge targets (Barnard's Star, Epsilon Indi B, WISE 0855, RW Aurigae, R Draconis) are pre-cut into Supabase Storage so they load instantly.
 

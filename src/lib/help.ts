@@ -88,6 +88,10 @@ export const HELP = {
         text: 'Width of the image in arcminutes (the Moon is about 30′). Zoom in to see small motions, zoom out for context and comparison stars.',
       },
       {
+        name: 'Explore arrows',
+        text: 'The tabs on the edges of the image move the view one step north, south, east or west (or press Shift + arrow keys), into Explore mode. Each step keeps a little overlap so you can follow a mover across. The four neighbouring views load in the background, so stepping is near instant once their tab shows a dot. The share link keeps the exact spot.',
+      },
+      {
         name: 'Coordinate grid',
         text: 'The grid button beside the measure/pin toggle, under the image, draws lines of constant RA and Dec across the image. The tick labels on the edges are always shown.',
       },

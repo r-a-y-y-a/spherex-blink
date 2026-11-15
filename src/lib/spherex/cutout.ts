@@ -74,7 +74,12 @@ export async function fetchFrame(
 
   const y0 = Math.max(0, Math.floor(minY) - 1)
   const y1 = Math.min(ny - 1, Math.ceil(maxY) + 1)
-  if (y1 < y0 || maxX < 0 || minX > nx - 1) throw new Error(`Target is off the detector in ${ref.obsid}`)
+  if (y1 < y0 || maxX < 0 || minX > nx - 1) {
+    // Expected when a frame list from a nearby position is reused; not worth retrying.
+    const err = new Error(`Target is off the detector in ${ref.obsid}`)
+    err.name = 'OffDetectorError'
+    throw err
+  }
 
   // IMAGE is big-endian float32, row-major; one contiguous read covers rows y0..y1.
   const rowBytes = nx * 4
@@ -156,7 +161,7 @@ export async function pool<T, R>(
           break
         } catch (err) {
           result = err as Error
-          if ((err as Error).name === 'AbortError') break
+          if (['AbortError', 'OffDetectorError'].includes((err as Error).name)) break
           await new Promise((r) => setTimeout(r, 300 * 2 ** attempt))
         }
       }

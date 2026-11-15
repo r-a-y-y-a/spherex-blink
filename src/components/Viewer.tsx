@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  Compass,
   Crosshair,
   Grid3x3,
   MapPin,
@@ -48,9 +51,10 @@ import { pixelToSky, skyTicks, skyToPixel } from '@/lib/axes'
 import { motion, parsePins, serializePins, type Pin } from '@/lib/pins'
 import { HELP, type HelpTopic } from '@/lib/help'
 import { formatDec, formatRa } from '@/lib/coords'
-import { loadLive, loadSeeded, type LiveProgress } from '@/lib/data'
+import { isPatchReady, loadLive, loadSeeded, preloadPatches, type LiveProgress } from '@/lib/data'
+import type { SetParams } from '@/lib/url'
 import { PIXEL_ARCSEC } from '@/lib/spherex/cutout'
-import { DEFAULT_TARGET, TARGETS, mjdToYear, positionAt, type Target } from '@/lib/targets'
+import { DEFAULT_TARGET, TARGETS, findTarget, mjdToYear, positionAt, type Target } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -59,11 +63,50 @@ type Props = {
   dec?: number
   name?: string
   params: URLSearchParams
-  setParams: (next: Record<string, string | null>, push?: boolean) => void
+  setParams: SetParams
   onGo: (d: Destination) => void
 }
 
-const LIVE_SIZE = 64
+/** Live cutout size: 64 px (6.5′), or 96 px when the 10′ view is wanted. */
+const liveSizeFor = (fovPx: number) => (fovPx > 64 ? 96 : 64)
+
+// Panning: each arrow moves the field centre by most of one view width, keeping a sliver of
+// overlap so the eye can follow. North is up and east is left, as on the image.
+type PanDir = 'n' | 's' | 'e' | 'w'
+const PAN_STEP = 0.8
+const PAN_DIRS: { dir: PanDir; name: string; icon: typeof ChevronUp; place: string }[] = [
+  { dir: 'n', name: 'north', icon: ChevronUp, place: 'top-0 left-1/2 h-7 w-14 -translate-x-1/2 rounded-b-xl' },
+  { dir: 's', name: 'south', icon: ChevronDown, place: 'bottom-0 left-1/2 h-7 w-14 -translate-x-1/2 rounded-t-xl' },
+  { dir: 'e', name: 'east', icon: ChevronLeft, place: 'top-1/2 left-0 h-14 w-7 -translate-y-1/2 rounded-r-xl' },
+  { dir: 'w', name: 'west', icon: ChevronRight, place: 'top-1/2 right-0 h-14 w-7 -translate-y-1/2 rounded-l-xl' },
+]
+
+/** Field centre one pan step away, rounded as in the URL; null where a step would cross a pole. */
+function stepFrom(ra: number, dec: number, dir: PanDir, fovPx: number) {
+  const step = (fovPx * PIXEL_ARCSEC * PAN_STEP) / 3600
+  if (dir === 'n' || dir === 's') {
+    const d = dec + (dir === 'n' ? step : -step)
+    return Math.abs(d) > 89.5 ? null : { ra: +ra.toFixed(5), dec: +d.toFixed(5) }
+  }
+  const cosd = Math.cos((dec * Math.PI) / 180)
+  if (cosd < 0.01) return null
+  const r = (((ra + ((dir === 'e' ? 1 : -1) * step) / cosd) % 360) + 360) % 360
+  return { ra: +r.toFixed(5), dec: +dec.toFixed(5) }
+}
+
+/** "4.2′ N, 3.1′ E": where a position sits relative to another, in arcminutes. */
+function offsetLabel(ra: number, dec: number, ra0: number, dec0: number) {
+  let dra = ra - ra0
+  if (dra > 180) dra -= 360
+  if (dra < -180) dra += 360
+  const east = dra * Math.cos((dec0 * Math.PI) / 180) * 60
+  const north = (dec - dec0) * 60
+  const parts = [
+    Math.abs(north) >= 0.05 ? `${Math.abs(north).toFixed(1)}′ ${north > 0 ? 'N' : 'S'}` : '',
+    Math.abs(east) >= 0.05 ? `${Math.abs(east).toFixed(1)}′ ${east > 0 ? 'E' : 'W'}` : '',
+  ].filter(Boolean)
+  return parts.length ? parts.join(', ') : 'Back at the start'
+}
 const FOVS = [
   { px: 32, label: '3′' },
   { px: 64, label: '6.5′' },
@@ -227,6 +270,51 @@ function GridButton({ on, onClick }: { on: boolean; onClick: () => void }) {
       </button>
     </div>
   )
+}
+
+/** Edge tabs on the image that pan the field. A dot marks a neighbour already preloaded. */
+function PanArrows({
+  disabled,
+  ready,
+  canPan,
+  onPan,
+}: {
+  disabled: boolean
+  ready: (d: PanDir) => boolean
+  canPan: (d: PanDir) => boolean
+  onPan: (d: PanDir) => void
+}) {
+  return (
+    <>
+      {PAN_DIRS.map(({ dir, name, icon: Icon, place }) => {
+        const isReady = ready(dir)
+        return (
+          <button
+            key={dir}
+            onClick={() => onPan(dir)}
+            disabled={disabled || !canPan(dir)}
+            aria-label={`Explore ${name}`}
+            title={`Explore ${name}: move one view ${name}${isReady ? ' (loaded)' : ''} · Shift + arrow key`}
+            className={cn(
+              'absolute z-10 grid place-items-center bg-black/55 text-white/75 ring-1 ring-white/15 backdrop-blur transition hover:bg-sky-300 hover:text-black focus-visible:bg-sky-300 focus-visible:text-black focus-visible:outline-none disabled:pointer-events-none disabled:opacity-30',
+              place,
+            )}
+          >
+            <Icon className="size-5" />
+            {isReady && <span className="absolute size-1 rounded-full bg-sky-300" style={dotPos(dir)} />}
+          </button>
+        )
+      })}
+    </>
+  )
+}
+
+/** Where the "preloaded" dot sits inside each edge tab: on its inner side, away from the edge. */
+function dotPos(dir: PanDir): React.CSSProperties {
+  if (dir === 'n') return { bottom: 3, left: '50%', transform: 'translateX(-50%)' }
+  if (dir === 's') return { top: 3, left: '50%', transform: 'translateX(-50%)' }
+  if (dir === 'e') return { right: 3, top: '50%', transform: 'translateY(-50%)' }
+  return { left: 3, top: '50%', transform: 'translateY(-50%)' }
 }
 
 /** Above this many frames, separate bars would be thinner than their gaps, so draw one scrubber. */
@@ -475,7 +563,23 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   const [copied, setCopied] = useState(false)
 
   const centre = target ? positionAt(target, 2025.95) : { ra: raIn!, dec: decIn! }
-  const title = target?.name ?? name ?? 'Custom position'
+  // Explore mode: reached by panning off a target or searched position. The URL keeps the exact
+  // spot plus where the exploring started (`origin`, a target slug or "ra,dec", and its `near` name).
+  const originParam = params.get('origin')
+  const near = params.get('near')
+  const explore = !target && originParam !== null
+  const originTarget = explore ? findTarget(originParam) : undefined
+  const originPos = useMemo(() => {
+    if (!explore || !originParam) return null
+    if (originTarget) return positionAt(originTarget, 2025.95)
+    const [ora, odec] = originParam.split(',').map(Number)
+    return Number.isFinite(ora) && Number.isFinite(odec) ? { ra: ora, dec: odec } : null
+  }, [explore, originParam, originTarget])
+  const title = target?.name ?? name ?? (near ? `Near ${near}` : 'Custom position')
+  const [loaded, setLoaded] = useState(false)
+  const panSize = liveSizeFor(fovPx)
+  // Re-render when a neighbour finishes preloading, so its arrow shows as ready.
+  const [, setPreloadTick] = useState(0)
 
   // Load: cached demo target from Supabase, or live from the archive + S3.
   useEffect(() => {
@@ -484,21 +588,26 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     setError('')
     setProgress(null)
     setApert(null)
+    setLoaded(false)
     const job = target
-      ? loadSeeded(target.slug, ctrl.signal).then(setDs)
-      : loadLive(centre.ra, centre.dec, LIVE_SIZE, (d, p) => {
+      ? loadSeeded(target.slug, ctrl.signal).then((d) => {
+          setDs(d)
+          setLoaded(true)
+        })
+      : loadLive(centre.ra, centre.dec, panSize, (d, p) => {
           setProgress(p)
           if (d) setDs(d)
-        }, ctrl.signal).then((d) => {
+        }, ctrl.signal, originTarget ? { slug: originTarget.slug } : (originPos ?? undefined)).then((d) => {
           setDs(d)
           setProgress(null)
+          setLoaded(true)
         })
     job.catch((err: Error) => {
       if (err.name !== 'AbortError') setError(err.message)
     })
     return () => ctrl.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target?.slug, raIn, decIn])
+  }, [target?.slug, raIn, decIn, target ? 0 : panSize])
 
   const visits = useMemo(() => (ds ? visitsOf(ds.frames) : []), [ds])
   const visitNames = useMemo(() => (ds ? visitNamesOf(ds.frames, visits) : []), [ds, visits])
@@ -572,11 +681,52 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   }, [playing, groups.length, fps])
   useEffect(() => setFrameIdx(0), [grouping, ranges])
 
-  // Keyboard: space = play/pause, arrows = step. Handy when recording.
+  // Step the field one view in a direction, entering Explore mode. View settings carry over,
+  // and the band choice is written out so a target's default band survives leaving the target.
+  const pan = (dir: PanDir) => {
+    const p = stepFrom(centre.ra, centre.dec, dir, fovPx)
+    if (!p) return
+    const keepBand: Record<string, string> = params.has('bands') || params.has('wmin') ? {} : { wmin: range[0].toFixed(2), wmax: range[1].toFixed(2) }
+    setParams(
+      {
+        ...keepBand,
+        target: null,
+        name: null,
+        ra: p.ra.toFixed(5),
+        dec: p.dec.toFixed(5),
+        origin: originParam ?? (target ? target.slug : `${centre.ra.toFixed(5)},${centre.dec.toFixed(5)}`),
+        near: near ?? title,
+      },
+      'keep',
+    )
+  }
+  const panRef = useRef(pan)
+  panRef.current = pan
+  const backToOrigin = () => {
+    if (originTarget) onGo({ target: originTarget.slug })
+    else if (originPos) onGo({ ra: originPos.ra, dec: originPos.dec, name: near ?? undefined })
+  }
+
+  // Once this patch is in, preload the patch one step away in each direction (and only those).
+  useEffect(() => {
+    if (!loaded || embed) return
+    const list = PAN_DIRS.flatMap(({ dir }) => {
+      const p = stepFrom(centre.ra, centre.dec, dir, fovPx)
+      return p ? [{ ...p, size: panSize }] : []
+    })
+    preloadPatches(list, () => setPreloadTick((t) => t + 1))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, centre.ra, centre.dec, fovPx, panSize])
+
+  // Keyboard: space = play/pause, arrows = step frames, Shift + arrows = pan. Handy when recording.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === 'INPUT') return
-      if (e.code === 'Space') {
+      const panKey = { ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'e', ArrowRight: 'w' }[e.key] as PanDir | undefined
+      if (e.shiftKey && panKey) {
+        e.preventDefault()
+        panRef.current(panKey)
+      } else if (e.code === 'Space') {
         e.preventDefault()
         setPlaying((p) => !p)
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
@@ -815,10 +965,27 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             <span className="hidden sm:inline">BLINKx</span>
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-heading text-xl font-semibold">{title}</h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate font-heading text-xl font-semibold">{title}</h1>
+              {explore && (
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-sky-300/15 px-2 py-0.5 text-xs font-medium text-sky-200 ring-1 ring-sky-300/40">
+                  <Compass className="size-3.5" />
+                  Explore mode
+                </span>
+              )}
+            </div>
             <p className="tabular font-mono text-xs text-muted-foreground">
               RA {formatRa(centre.ra)} · Dec {formatDec(centre.dec)}
               {target && <span className="text-muted-foreground/70"> · position for late 2025</span>}
+              {explore && originPos && (
+                <>
+                  <span className="text-sky-200/80"> · {offsetLabel(centre.ra, centre.dec, originPos.ra, originPos.dec)}</span>
+                  {' · '}
+                  <button onClick={backToOrigin} className="font-sans text-sky-200 underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none">
+                    Back to {near ?? 'start'}
+                  </button>
+                </>
+              )}
             </p>
           </div>
           <div className="w-full max-w-xs">
@@ -854,7 +1021,12 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 </span>
               ))}
           </div>
-          <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_0_80px_-20px_rgba(56,98,180,0.5)]">
+          <div
+            className={cn(
+              'relative aspect-square w-full overflow-hidden rounded-2xl border bg-black shadow-[0_0_80px_-20px_rgba(56,98,180,0.5)]',
+              explore ? 'border-sky-300/45' : 'border-white/10',
+            )}
+          >
             {images.length > 0 && (
               <canvas
                 ref={canvasRef}
@@ -999,7 +1171,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
 
             {/* Labels: one row sharing the width, so they never overlap on a phone. */}
             {images.length > 0 && (
-              <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-2">
+              <div className="pointer-events-none absolute inset-x-3 top-8 flex items-start justify-between gap-2 sm:top-3">
                 {group ? (
                   <div className="min-w-0 rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur">
                     <div className="tabular font-heading text-lg font-semibold leading-tight whitespace-nowrap sm:text-2xl sm:leading-none">{group.label}</div>
@@ -1054,6 +1226,17 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               </>
             )}
 
+            {/* Pan arrows: step one view north, south, east or west into Explore mode. */}
+            <PanArrows
+              disabled={!ds && !error}
+              ready={(dir) => {
+                const p = stepFrom(centre.ra, centre.dec, dir, fovPx)
+                return !!p && isPatchReady(p.ra, p.dec, panSize)
+              }}
+              canPan={(dir) => !!stepFrom(centre.ra, centre.dec, dir, fovPx)}
+              onPan={pan}
+            />
+
             {/* Loading / error states */}
             {(loading || error || (ds && images.length === 0)) && (
               <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_center,rgba(56,98,180,0.15),transparent_70%)] p-8 text-center">
@@ -1090,7 +1273,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               </div>
             )}
             {progress?.phase === 'frames' && progress.done < progress.total && (
-              <div className="absolute inset-x-0 bottom-0 bg-black/70 px-4 py-2 text-xs backdrop-blur">
+              <div className="absolute inset-x-0 bottom-0 bg-black/70 px-4 pt-2 pb-9 text-xs backdrop-blur">
                 <div className="mb-1.5 flex justify-between text-white/80">
                   <span>Reading pixels straight from NASA’s cloud archive</span>
                   <span className="tabular font-mono">
@@ -1277,7 +1460,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             <Section title="Field of view" info={HELP.field}>
               <Segmented
                 value={fovPx}
-                options={FOVS.filter((f) => f.px <= size).map((f) => ({ id: f.px, label: f.label }))}
+                options={FOVS.filter((f) => f.px <= (target ? size : 96)).map((f) => ({ id: f.px, label: f.label }))}
                 onChange={(px) => setParams({ fov: px === 64 ? null : String(px) })}
               />
             </Section>
