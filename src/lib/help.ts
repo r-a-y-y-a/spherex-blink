@@ -89,7 +89,7 @@ export const HELP = {
       },
       {
         name: 'Coordinate grid',
-        text: 'Draws lines of constant RA and Dec across the image. The tick labels on the edges are always shown.',
+        text: 'The grid button beside the measure/pin toggle, under the image, draws lines of constant RA and Dec across the image. The tick labels on the edges are always shown.',
       },
     ],
   },

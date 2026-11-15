@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Crosshair,
+  Grid3x3,
   MapPin,
   Maximize2,
   X,
@@ -202,6 +203,28 @@ function ToolToggle({ tool, onChange }: { tool: 'measure' | 'pin'; onChange: (t:
           <Icon className="size-4" />
         </button>
       ))}
+    </div>
+  )
+}
+
+/** Round on/off button for the RA/Dec grid, styled to sit beside the click-mode toggle. */
+function GridButton({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <div className="shrink-0 rounded-full bg-black/50 p-1 ring-1 ring-white/20">
+      <button
+        onClick={onClick}
+        aria-label="Coordinate grid"
+        aria-pressed={on}
+        title={on ? 'Hide the RA/Dec grid lines' : 'Show RA/Dec grid lines across the image'}
+        className={cn(
+          'grid size-8 place-items-center rounded-full transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+          on
+            ? 'bg-sky-300 text-black shadow-[0_0_14px_-2px] shadow-sky-300/60'
+            : 'text-foreground/70 hover:bg-white/10 hover:text-foreground',
+        )}
+      >
+        <Grid3x3 className="size-4" />
+      </button>
     </div>
   )
 }
@@ -1135,7 +1158,10 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 </span>
               )}
             </div>
-            <ToolToggle tool={tool} onChange={setTool} />
+            <div className="flex shrink-0 items-center gap-2">
+              <ToolToggle tool={tool} onChange={setTool} />
+              <GridButton on={gridOn} onClick={() => setParams({ grid: gridOn ? null : '1' })} />
+            </div>
           </div>
 
           {/* Transport */}
@@ -1254,7 +1280,6 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 options={FOVS.filter((f) => f.px <= size).map((f) => ({ id: f.px, label: f.label }))}
                 onChange={(px) => setParams({ fov: px === 64 ? null : String(px) })}
               />
-              <Toggle on={gridOn} onClick={() => setParams({ grid: gridOn ? null : '1' })} label="Coordinate grid" />
             </Section>
           </div>
           {diff && groups.length > 1 && (

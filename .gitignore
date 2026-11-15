@@ -9,3 +9,7 @@ __pycache__/
 *.fits
 .vercel
 .env*
+
+# Demo video assets (kept locally, not in the repo)
+/end-card*.png
+.DS_Store
