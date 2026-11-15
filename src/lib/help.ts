@@ -97,22 +97,6 @@ export const HELP = {
       { name: 'Greyscale', text: 'Black to white, like a classic astronomy plate. Good for judging shapes.' },
     ],
   },
-  image: {
-    title: 'Reading the image',
-    intro: 'North is up and east is left, as on a sky chart. Every frame is real SPHEREx data, reprojected so all frames line up.',
-    items: [
-      { name: 'Dashed blue circle', text: 'Where the catalogue (SIMBAD) proper motion predicts the target on this frame’s date.' },
-      { name: 'Orange ring', text: 'Your measuring aperture. With the crosshair icon selected under the image, click anywhere to place it; the charts update.' },
-      { name: 'Green rings', text: 'Gaia DR3 stars, when Gaia stars is on.' },
-      { name: 'White numbered marks', text: 'Your pins. They stay on the same spot in the sky in every frame.' },
-      { name: 'Edge labels', text: 'Right ascension along the bottom and declination up the left side.' },
-      {
-        name: 'Readout',
-        text: 'Hover (or tap) the image for the sky position, the pixel value in MJy/sr (surface brightness), the distance from the field centre, and any Gaia star there.',
-      },
-      { name: 'Colour bar', text: 'The brightness each colour stands for, in MJy/sr.' },
-    ],
-  },
   spectrum: {
     title: 'Spectrum',
     intro:

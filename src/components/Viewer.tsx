@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Crosshair,
   MapPin,
+  Maximize2,
   X,
   Link2,
   LoaderCircle,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { InfoButton } from '@/components/InfoButton'
 import { ScatterChart, type Point } from '@/components/ScatterChart'
 import { VISIT_COLORS } from '@/lib/colors'
@@ -116,6 +118,19 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
     >
       <span className={cn('size-1.5 rounded-full', on ? 'bg-primary' : 'bg-muted-foreground/40')} />
       {label}
+    </button>
+  )
+}
+
+function ExpandButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={`Enlarge ${label.toLowerCase()} chart`}
+      title="Enlarge"
+      className="-m-1.5 grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      <Maximize2 className="size-3.5" />
     </button>
   )
 }
@@ -446,6 +461,41 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
       }),
     [groups, stacks, size, apX, apY, current],
   )
+
+  const spectrumTitle = apert ? 'Spectrum at the ring' : 'Spectrum at the centre'
+  // Each chart is drawn wider (not just scaled up) when expanded, so text stays readable.
+  const spectrumChart = (big: boolean) => (
+    <ScatterChart
+      points={spectrum}
+      seriesNames={visitNames}
+      xLabel="Wavelength (µm)"
+      yLabel="Flux (mJy)"
+      xDomain={[WAVE_MIN, WAVE_MAX]}
+      band={range}
+      height={big ? 480 : 190}
+      width={big ? 1040 : 520}
+    />
+  )
+  const lightCurveChart = (big: boolean) => (
+    <ScatterChart
+      points={lightCurve}
+      seriesNames={visitNames}
+      xLabel={`Date · ${bandLabel}`}
+      yLabel="Flux (mJy)"
+      xTicks={([a, b]) => {
+        const out: { v: number; label: string }[] = []
+        for (let y = Math.ceil(a * 4) / 4; y <= b; y += 0.25) {
+          const m = Math.round((y % 1) * 12)
+          out.push({ v: y, label: `${['Jan', 'Apr', 'Jul', 'Oct'][m / 3]} ${String(Math.floor(y)).slice(2)}` })
+        }
+        return out
+      }}
+      height={big ? 480 : 170}
+      width={big ? 1040 : 520}
+      empty="Not enough frames in this band"
+    />
+  )
+  const [expanded, setExpanded] = useState<'spectrum' | 'light' | null>(null)
 
   function toPixel(e: React.MouseEvent<HTMLCanvasElement>): [number, number] {
     const r = e.currentTarget.getBoundingClientRect()
@@ -788,7 +838,6 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               )}
             </div>
             <ToolToggle tool={tool} onChange={setTool} />
-            <InfoButton topic={HELP.image} className="shrink-0" />
           </div>
 
           {/* Transport */}
@@ -931,66 +980,43 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
           )}
 
           <Section
-            title={apert ? 'Spectrum at the ring' : 'Spectrum at the centre'}
+            title={spectrumTitle}
             info={HELP.spectrum}
             aside={
-              apert && (
-                <button
-                  onClick={() => setApert(null)}
-                  className="flex items-center gap-1 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground"
-                >
-                  <Crosshair className="size-3.5" /> Reset to centre
-                </button>
-              )
+              <div className="flex items-center gap-3">
+                {apert && (
+                  <button
+                    onClick={() => setApert(null)}
+                    className="flex items-center gap-1 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground"
+                  >
+                    <Crosshair className="size-3.5" /> Reset to centre
+                  </button>
+                )}
+                <ExpandButton label={spectrumTitle} onClick={() => setExpanded('spectrum')} />
+              </div>
             }
           >
-            <ScatterChart
-              points={spectrum}
-              seriesNames={visitNames}
-              xLabel="Wavelength (µm)"
-              yLabel="Flux (mJy)"
-              xDomain={[WAVE_MIN, WAVE_MAX]}
-              band={range}
-              height={190}
-            />
-          </Section>
-
-          <Section title="Brightness over time" info={HELP.lightCurve}>
-            <ScatterChart
-              points={lightCurve}
-              seriesNames={visitNames}
-              xLabel={`Date · ${bandLabel}`}
-              yLabel="Flux (mJy)"
-              xTicks={([a, b]) => {
-                const out: { v: number; label: string }[] = []
-                for (let y = Math.ceil(a * 4) / 4; y <= b; y += 0.25) {
-                  const m = Math.round((y % 1) * 12)
-                  out.push({ v: y, label: `${['Jan', 'Apr', 'Jul', 'Oct'][m / 3]} ${String(Math.floor(y)).slice(2)}` })
-                }
-                return out
-              }}
-              height={170}
-              empty="Not enough frames in this band"
-            />
+            {spectrumChart(false)}
           </Section>
 
           <Section
-            title="Pins"
-            info={HELP.pins}
-            aside={
-              pins.length > 0 && (
+            title="Brightness over time"
+            info={HELP.lightCurve}
+            aside={<ExpandButton label="Brightness over time" onClick={() => setExpanded('light')} />}
+          >
+            {lightCurveChart(false)}
+          </Section>
+
+          {pins.length > 0 && (
+            <Section
+              title="Pins"
+              info={HELP.pins}
+              aside={
                 <button onClick={() => setPins([])} className="text-xs text-muted-foreground hover:text-foreground">
                   Clear all
                 </button>
-              )
-            }
-          >
-            {pins.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Switch the toggle under the image to the <MapPin className="inline size-3.5 align-[-2px] text-foreground" /> pin,
-                then click a spot. Pin the same object again in a later frame to measure how fast it moves.
-              </p>
-            ) : (
+              }
+            >
               <ol className="space-y-1.5">
                 {pins.map((p, k) => {
                   const m = pinRef && p !== pinRef ? motion(pinRef, p) : null
@@ -1032,8 +1058,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   )
                 })}
               </ol>
-            )}
-          </Section>
+            </Section>
+          )}
 
           {ds && (
             <Section title="About these frames" info={HELP.about}>
@@ -1075,6 +1101,18 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
           )}
         </aside>
       </main>
+
+      <Dialog open={expanded !== null} onOpenChange={(open) => !open && setExpanded(null)}>
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto p-6 sm:max-w-[min(1120px,calc(100vw-4rem))]">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg">{expanded === 'spectrum' ? spectrumTitle : 'Brightness over time'}</DialogTitle>
+            <DialogDescription>
+              {title} · {expanded === 'spectrum' ? `${ds?.frames.length ?? 0} exposures, shaded band ${bandLabel}` : `${groups.length} frames, ${bandLabel}`}
+            </DialogDescription>
+          </DialogHeader>
+          {expanded === 'spectrum' ? spectrumChart(true) : expanded === 'light' ? lightCurveChart(true) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

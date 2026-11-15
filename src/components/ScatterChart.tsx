@@ -12,10 +12,11 @@ type Props = {
   xTicks?: (domain: [number, number]) => { v: number; label: string }[]
   band?: [number, number]
   height?: number
+  /** Drawing width in SVG units; the chart scales to its box, so a wider chart keeps text the same size. */
+  width?: number
   empty?: string
 }
 
-const W = 520
 const M = { top: 10, right: 12, bottom: 34, left: 52 }
 
 function niceTicks(lo: number, hi: number, n = 4) {
@@ -28,15 +29,18 @@ function niceTicks(lo: number, hi: number, n = 4) {
   return out
 }
 
-export function ScatterChart({ points, seriesNames, xLabel, yLabel, xDomain, xTicks, band, height = 200, empty }: Props) {
+export function ScatterChart({ points, seriesNames, xLabel, yLabel, xDomain, xTicks, band, height = 200, width = 520, empty }: Props) {
   const [hover, setHover] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const H = height
+  const W = width
 
   const { xd, yd, sx, sy } = useMemo(() => {
     const finite = points.filter((p) => Number.isFinite(p.y))
     const xs = finite.map((p) => p.x)
-    const raw = xDomain ?? [Math.min(...xs), Math.max(...xs)]
+    // Without a fixed domain, pad 4% each side so the first and last points are not on the edges.
+    const span = Math.max(...xs) - Math.min(...xs)
+    const raw = xDomain ?? [Math.min(...xs) - span * 0.04, Math.max(...xs) + span * 0.04]
     const xd: [number, number] = raw[0] === raw[1] ? [raw[0] - 1, raw[1] + 1] : [raw[0], raw[1]]
     // Robust y range: ignore the wildest 2% (cosmic rays, edge pixels) on each side.
     const ys = finite.map((p) => p.y).sort((a, b) => a - b)
@@ -51,7 +55,7 @@ export function ScatterChart({ points, seriesNames, xLabel, yLabel, xDomain, xTi
     const sx = (v: number) => M.left + ((v - xd[0]) / (xd[1] - xd[0])) * (W - M.left - M.right)
     const sy = (v: number) => M.top + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * (H - M.top - M.bottom)
     return { xd, yd: [lo, hi] as [number, number], sx, sy }
-  }, [points, xDomain, H])
+  }, [points, xDomain, H, W])
 
   if (!points.some((p) => Number.isFinite(p.y)))
     return (
@@ -60,7 +64,7 @@ export function ScatterChart({ points, seriesNames, xLabel, yLabel, xDomain, xTi
       </div>
     )
 
-  const xt = xTicks ? xTicks(xd) : niceTicks(xd[0], xd[1], 5).map((v) => ({ v, label: String(v) }))
+  const xt = xTicks ? xTicks(xd) : niceTicks(xd[0], xd[1], Math.max(5, Math.round(W / 110))).map((v) => ({ v, label: String(v) }))
   const yt = niceTicks(yd[0], yd[1], 4)
   const used = [...new Set(points.map((p) => p.series))].sort()
 
