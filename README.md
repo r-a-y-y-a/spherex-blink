@@ -96,7 +96,7 @@ To use another API, such as production's (useful for realistic live-loading spee
 API_PROXY=https://blinkx-nasa.vercel.app npx vite
 ```
 
-Re-cut the demo targets (for example after a new data release):
+Re-cut the challenge targets (for example after a new data release):
 
 ```sh
 node --env-file=.env.local scripts/seed.ts               # all five
