@@ -5,15 +5,16 @@ Type a star name or sky coordinates and watch every NASA SPHEREx infrared image 
 
 ## What it does
 
-- Finds every SPHEREx Level 2 spectral image covering a position through the NASA/IPAC IRSA archive (TAP), including newly ingested quick-release data.
+- Finds every SPHEREx Level 2 spectral image covering a position through the NASA/IPAC IRSA archive (Simple Image Access, with TAP as a fallback), including newly ingested quick-release data.
 - Reads only the needed pixels straight from NASA's public S3 copy of the archive with HTTP Range requests, then reprojects each frame north-up so frames taken at different spacecraft orientations line up.
 - Stacks frames per 6-month survey pass, per day, or shows every exposure, within any wavelength range from 0.75 to 5.0 microns (or one of the six detector bands).
-- Difference mode subtracts the median of all frames, so anything that moved or changed brightness stands out.
+- Difference mode subtracts a reference, either the median of all frames or one chosen frame (A − B), so anything that moved or changed brightness stands out.
 - Click anywhere on the image to get a spectrum (every exposure samples a slightly different wavelength, so all of them together make a spectrum) and a brightness-over-time curve.
 - Pipeline quality flags (saturation, ghosts, streaks, cosmic rays and more) are read from each image's RICE-compressed FLAGS extension at the target. Flagged exposures show hollow in the spectrum, are listed per frame, and can be skipped.
 - Gaia DR3 stars can be overlaid, each moved to the frame's date with its proper motion.
+- CatWISE2020 sources from NASA's WISE survey can be overlaid too; objects WISE measured moving get an arrow and their speed, as an independent check from a second telescope. Spurious catalogue motions around bright saturated stars are filtered out using Gaia.
 - Live positions are cut by the API in batches, in the same AWS region as NASA's S3 bucket (browsers only get 6 connections to S3).
-- RA/Dec axis labels on the image edges, an optional coordinate grid, a colour bar in MJy/sr, and a readout of the sky position, pixel value and any Gaia star under the pointer.
+- RA/Dec axis labels on the image edges, an optional coordinate grid, a colour bar in MJy/sr, and a readout of the sky position, pixel value and any Gaia or WISE source under the pointer.
 - Pins, like Backyard Worlds marks: drop numbered pins that stay fixed on the sky while the flipbook plays, and pin a mover again in a later frame to measure its motion (arcsec/yr and direction). Pins are saved in the share link (`&pins=ra,dec,mjd;...`).
 - An (i) button beside each group of controls explains what it does and when to use it.
 - Known movers show a dashed circle where catalogue proper motion predicts them on each date.
@@ -23,7 +24,7 @@ Type a star name or sky coordinates and watch every NASA SPHEREx infrared image 
 ## Stack
 
 - Frontend: React, Vite, Tailwind, shadcn/ui (`src/`).
-- API: Express as a single Vercel function (`api/index.ts`): `/api/search` (archive search, cached in Supabase), `/api/cutouts` (batch frame cutting), `/api/gaia` (Gaia DR3 stars), `/api/resolve` (SIMBAD name lookup), `/api/health`.
+- API: Express as a single Vercel function (`api/index.ts`): `/api/search` (archive search, cached in Supabase), `/api/cutouts` (batch frame cutting), `/api/gaia` (Gaia DR3 stars), `/api/wise` (CatWISE2020 sources and movers), `/api/resolve` (SIMBAD name lookup), `/api/health`.
 - Shared SPHEREx code (`src/lib/spherex/`): FITS header parsing, TAN-SIP WCS, wavelength lookup, Range-read cutouts. Runs in both the browser and Node.
 - Supabase: `searches` table (archive search cache, schema in `supabase/schema.sql`) and a public `frames` storage bucket.
 
@@ -57,4 +58,4 @@ node --env-file=.env.local scripts/seed.ts wise-0855     # just one
 
 SPHEREx Level 2 spectral images from NASA/IPAC Infrared Science Archive (IRSA).
 Object positions and proper motions from SIMBAD (CDS, Strasbourg).
-Star overlays from ESA Gaia DR3.
+Star overlays from ESA Gaia DR3 and NASA WISE (CatWISE2020), both via IRSA.

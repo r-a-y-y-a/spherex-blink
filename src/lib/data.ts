@@ -55,8 +55,9 @@ export async function loadLive(
 ): Promise<Dataset> {
   onUpdate(null, { phase: 'search', done: 0, total: 0 })
   const res = await fetch(`/api/search?ra=${ra}&dec=${dec}`, { signal })
-  const body = await res.json()
-  if (!res.ok) throw new Error(body.error ?? 'Archive search failed')
+  // A platform timeout returns an HTML/text page, not JSON, so never assume a JSON body.
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.error ?? `The archive search failed (HTTP ${res.status}). Try again shortly.`)
   const refs = interleave(thinFrames(body.frames as FrameRef[], MAX_FRAMES))
   if (!refs.length) throw new Error('SPHEREx has not observed this position yet.')
   onUpdate(null, { phase: 'frames', done: 0, total: refs.length })

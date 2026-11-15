@@ -78,6 +78,9 @@ const GROUPINGS: { id: Grouping; label: string; hint: string }[] = [
 ]
 
 type GaiaStar = { ra: number; dec: number; g: number; pmra: number; pmdec: number }
+const WISE_MAX_FIXED = 60
+/** CatWISE2020 source; motions in mas/yr, position at `mjd` (the catalogue's mean epoch). */
+type WiseSource = { ra: number; dec: number; w1: number | null; w2: number; pmra: number; pmdec: number; mover: boolean; mjd: number }
 
 function Segmented<T extends string | number>({
   value,
@@ -269,9 +272,16 @@ function Timeline({ groups, current, onSeek }: { groups: Group[]; current: numbe
   )
 }
 
-/** Difference mode: subtract the per-pixel median of all stacks, leaving only what changed. */
-function diffImages(stacks: Float32Array[], diff: boolean, ds: Dataset | null): Float32Array[] {
+/**
+ * Difference mode: subtract a reference so only what changed is left. The reference is one chosen
+ * stack (A − B) when `refIdx` is set, otherwise the per-pixel median of all stacks.
+ */
+function diffImages(stacks: Float32Array[], diff: boolean, ds: Dataset | null, refIdx: number): Float32Array[] {
   if (!diff || stacks.length < 2 || !ds) return stacks
+  if (refIdx >= 0) {
+    const b = stacks[refIdx]
+    return stacks.map((s) => s.map((v, p) => v - b[p]))
+  }
   const n = ds.size * ds.size
   const ref = new Float32Array(n)
   const buf = new Float32Array(stacks.length)
@@ -303,6 +313,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   const skipFlagged = params.get('flags') === 'skip'
   const smoothOn = params.get('smooth') === '1'
   const gaiaOn = params.get('gaia') === '1'
+  const wiseOn = params.get('wise') === '1'
+  const [wise, setWise] = useState<WiseSource[] | null>(null)
   const gridOn = params.get('grid') === '1'
   const [hover, setHover] = useState<[number, number] | null>(null)
   const [gaia, setGaia] = useState<GaiaStar[] | null>(null)
@@ -350,10 +362,23 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     [ds, groups],
   )
 
+  // Difference reference (B): stored as a date so it survives regrouping and wavelength changes,
+  // and matched to the nearest frame now shown.
+  const refParam = params.get('ref')
+  const refIdx = useMemo(() => {
+    if (refParam === null || groups.length < 2) return -1
+    const mjd = Number(refParam)
+    let best = -1
+    groups.forEach((g, k) => {
+      if (best < 0 || Math.abs(g.mjd - mjd) < Math.abs(groups[best].mjd - mjd)) best = k
+    })
+    return best
+  }, [refParam, groups])
+
   const images = useMemo(() => {
-    const out = diffImages(stacks, diff, ds)
+    const out = diffImages(stacks, diff, ds, refIdx)
     return smoothOn && ds ? out.map((img) => smooth(img, ds.size)) : out
-  }, [stacks, diff, ds, smoothOn])
+  }, [stacks, diff, ds, smoothOn, refIdx])
 
   // Gaia DR3 stars in the field, fetched once per position when the overlay is first shown.
   useEffect(() => {
@@ -364,6 +389,16 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
       .then((b) => setGaia(b.stars))
       .catch(() => setGaia([]))
   }, [gaiaOn, ds, gaia])
+
+  // CatWISE2020 sources (WISE's own catalogue, with WISE-measured motions), fetched once per position.
+  useEffect(() => {
+    if (!wiseOn || !ds || wise) return
+    const radius = ((ds.size * PIXEL_ARCSEC) / 3600) * 0.72
+    fetch(`/api/wise?ra=${ds.ra}&dec=${ds.dec}&radius=${radius.toFixed(4)}`)
+      .then((r) => (r.ok ? r.json() : { sources: [] }))
+      .then((b) => setWise(b.sources))
+      .catch(() => setWise([]))
+  }, [wiseOn, ds, wise])
 
   const crop = useMemo(() => centredCrop(ds?.size ?? 64, fovPx), [ds?.size, fovPx])
 
@@ -445,6 +480,23 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
       })
       .filter((p) => p.x > crop.x0 - 0.5 && p.x < crop.x0 + crop.n - 0.5 && p.y > crop.y0 - 0.5 && p.y < crop.y0 + crop.n - 0.5)
   }, [gaiaOn, gaia, ds, group, half, crop])
+
+  // WISE sources placed at this frame's date with their WISE-measured motion.
+  const wisePx = useMemo(() => {
+    if (!wiseOn || !wise || !ds || !group) return []
+    const year = mjdToYear(group.mjd)
+    return wise
+      .map((w) => {
+        const dt = year - mjdToYear(w.mjd)
+        const ra = w.ra + (w.pmra * dt) / 3.6e6 / Math.cos((w.dec * Math.PI) / 180)
+        const dec = w.dec + (w.pmdec * dt) / 3.6e6
+        return { ...skyToPixel(ra, dec, ds.ra, ds.dec, size), w }
+      })
+      .filter((p) => p.x > crop.x0 - 0.5 && p.x < crop.x0 + crop.n - 0.5 && p.y > crop.y0 - 0.5 && p.y < crop.y0 + crop.n - 0.5)
+      // Every mover, plus only the brightest fixed sources, so dense fields stay readable.
+      .sort((a, b) => Number(b.w.mover) - Number(a.w.mover) || a.w.w2 - b.w.w2)
+      .filter((p, k) => p.w.mover || k < WISE_MAX_FIXED)
+  }, [wiseOn, wise, ds, group, size, crop])
 
   const spectrum: Point[] = useMemo(() => {
     if (!ds) return []
@@ -555,13 +607,17 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     if (i < 0 || j < 0 || i >= size || j >= size) return null
     const sky = pixelToSky(x, y, ds.ra, ds.dec, size)
     const star = gaiaPx.find((p) => Math.hypot(p.x - x, p.y - y) < 1.2)
+    const wiseHit = wisePx
+      .filter((p) => Math.hypot(p.x - x, p.y - y) < 1.5)
+      .sort((a, b) => Number(b.w.mover) - Number(a.w.mover))[0]?.w
     return {
       ...sky,
       value: images[current][j * size + i],
       offset: Math.hypot(x - half, y - half) * PIXEL_ARCSEC,
       star,
+      wise: wiseHit,
     }
-  }, [probe, ds, images, current, size, half, gaiaPx])
+  }, [probe, ds, images, current, size, half, gaiaPx, wisePx])
 
   // Overlay geometry in % of the displayed crop (north up, so flip y).
   const pct = (x: number, y: number) => ({
@@ -662,6 +718,68 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               </div>
             )}
 
+            {/* CatWISE sources: violet diamonds; significant movers get an arrow along their motion. */}
+            {images.length > 0 && wisePx.length > 0 && (
+              <svg
+                className="pointer-events-none absolute inset-0 size-full overflow-visible"
+                viewBox={`0 0 ${crop.n} ${crop.n}`}
+                aria-hidden
+              >
+                {wisePx.map(({ x, y, w }, k) => {
+                  const cx = x - crop.x0 + 0.5
+                  const cy = crop.n - (y - crop.y0 + 0.5)
+                  const r = w.mover ? 1.3 : Math.max(0.55, 1.1 - (w.w2 - 10) * 0.1)
+                  const pm = Math.hypot(w.pmra, w.pmdec)
+                  // East is left on the image, north is up.
+                  const ux = -w.pmra / (pm || 1), uy = -w.pmdec / (pm || 1)
+                  return (
+                    <g key={k} className={w.mover ? 'text-violet-300' : 'text-violet-300/70'}>
+                      <polygon
+                        points={`${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={w.mover ? 2 : 1.25}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      {w.mover && (
+                        <>
+                          <line
+                            x1={cx + ux * (r + 0.4)}
+                            y1={cy + uy * (r + 0.4)}
+                            x2={cx + ux * (r + 3)}
+                            y2={cy + uy * (r + 3)}
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            vectorEffect="non-scaling-stroke"
+                            markerEnd="url(#wise-arrow)"
+                          />
+                        </>
+                      )}
+                    </g>
+                  )
+                })}
+                <defs>
+                  <marker id="wise-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path d="M0,0 L10,5 L0,10 z" fill="#c4b5fd" />
+                  </marker>
+                </defs>
+              </svg>
+            )}
+
+            {/* Mover speed labels: HTML, so they stay a readable size at every zoom. */}
+            {images.length > 0 &&
+              wisePx
+                .filter((p) => p.w.mover)
+                .map(({ x, y, w }, k) => (
+                  <span
+                    key={k}
+                    className="tabular pointer-events-none absolute translate-x-2 -translate-y-[130%] rounded bg-black/70 px-1 font-mono text-[11px] leading-4 whitespace-nowrap text-violet-200"
+                    style={pct(x, y)}
+                  >
+                    WISE {(Math.hypot(w.pmra, w.pmdec) / 1000).toFixed(1)}″/yr
+                  </span>
+                ))}
+
             {/* Gaia DR3 stars */}
             {images.length > 0 &&
               gaiaPx.map((p, k) => (
@@ -732,7 +850,13 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 )}
                 <div className="shrink-0 rounded-lg bg-black/60 px-2.5 py-1.5 text-right backdrop-blur">
                   <div className="tabular font-mono text-xs sm:text-sm">{bandLabel}</div>
-                  <div className="hidden text-[11px] text-white/60 sm:block">{diff ? 'Difference from median' : 'Infrared'}</div>
+                  <div className="hidden text-[11px] text-white/60 sm:block">{!diff
+                      ? 'Infrared'
+                      : refIdx < 0
+                        ? 'Difference from median'
+                        : refIdx === current
+                          ? 'Reference frame (B)'
+                          : `Minus ${groups[refIdx].label}`}</div>
                   {/* Colour bar: the brightness each colour stands for. */}
                   <div className="mt-1.5 flex items-center justify-end gap-1.5 font-mono text-[10px] text-white/70">
                     <span className="tabular">{fmtVal(limits[0])}</span>
@@ -841,6 +965,16 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                     <>
                       {' · '}
                       <span className="whitespace-nowrap text-emerald-300">Gaia star G {readout.star.g.toFixed(1)}</span>
+                    </>
+                  )}
+                  {readout.wise && (
+                    <>
+                      {' · '}
+                      <span className="whitespace-nowrap text-violet-300">
+                        WISE W2 {readout.wise.w2.toFixed(1)}
+                        {readout.wise.mover &&
+                          `, moving ${(Math.hypot(readout.wise.pmra, readout.wise.pmdec) / 1000).toFixed(2)}″/yr`}
+                      </span>
                     </>
                   )}
                 </>
@@ -969,9 +1103,10 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 ]}
                 onChange={(m) => setParams({ mode: m === 'diff' ? 'diff' : null })}
               />
-              <div className="grid grid-cols-2 gap-1">
+              <div className="grid grid-cols-3 gap-1">
                 <Toggle on={smoothOn} onClick={() => setParams({ smooth: smoothOn ? null : '1' })} label="Smooth" />
-                <Toggle on={gaiaOn} onClick={() => setParams({ gaia: gaiaOn ? null : '1' })} label="Gaia stars" />
+                <Toggle on={gaiaOn} onClick={() => setParams({ gaia: gaiaOn ? null : '1' })} label="Gaia" />
+                <Toggle on={wiseOn} onClick={() => setParams({ wise: wiseOn ? null : '1' })} label="WISE" />
               </div>
             </Section>
             <Section title="Field of view" info={HELP.field}>
@@ -983,6 +1118,35 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               <Toggle on={gridOn} onClick={() => setParams({ grid: gridOn ? null : '1' })} label="Coordinate grid" />
             </Section>
           </div>
+          {diff && groups.length > 1 && (
+            <Section title="Subtract" info={HELP.subtract}>
+              <Segmented
+                value={refIdx < 0 ? 'median' : 'frame'}
+                options={[
+                  { id: 'median', label: 'Median of all' },
+                  { id: 'frame', label: refIdx < 0 ? 'One frame' : groups[refIdx].label },
+                ]}
+                onChange={(m) =>
+                  setParams({ ref: m === 'median' ? null : (refParam ?? group.mjd.toFixed(4)) })
+                }
+              />
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>
+                  {refIdx < 0
+                    ? 'Each frame minus the typical sky. Anything that changed stands out.'
+                    : `Each frame minus ${groups[refIdx].label}. Orange: only in this frame. Blue: only in B.`}
+                </span>
+                {current !== refIdx && (
+                  <button
+                    onClick={() => setParams({ ref: group.mjd.toFixed(4) })}
+                    className="shrink-0 rounded-md px-2 py-1 font-medium whitespace-nowrap text-foreground ring-1 ring-white/15 transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    Use this frame as B
+                  </button>
+                )}
+              </div>
+            </Section>
+          )}
           {!diff && (
             <Section title="Colour" info={HELP.colour}>
               <Segmented
@@ -1112,6 +1276,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                   Source: NASA/IPAC IRSA, SPHEREx Level 2 spectral images.
                   {predicted && ' Dashed circle: where catalogue motion predicts the target on this date.'}
                   {gaiaOn && ' Green circles: Gaia DR3 stars at this date (bigger = brighter).'}
+                  {wiseOn && ' Violet diamonds: CatWISE2020 sources at this date; arrows mark WISE-measured movers.'}
                 </p>
               )}
             </Section>

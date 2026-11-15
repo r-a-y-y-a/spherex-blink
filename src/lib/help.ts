@@ -64,14 +64,18 @@ export const HELP = {
       },
       {
         name: 'Difference',
-        text: 'Subtracts the median of all frames, so anything constant disappears. Orange is brighter than usual, blue is fainter. A mover leaves a blue/orange pair: blue where it was, orange where it is now.',
+        text: 'Subtracts a reference (the median of all frames, or one frame you pick under Subtract), so anything constant disappears. Orange is brighter than usual, blue is fainter. A mover leaves a blue/orange pair: blue where it was, orange where it is now.',
       },
       {
         name: 'Smooth',
         text: 'Blurs by about one pixel to average out noise, so faint real sources stand out from single noisy pixels. It only changes the picture; the charts use raw pixels.',
       },
       {
-        name: 'Gaia stars',
+        name: 'WISE',
+        text: 'Violet diamonds on sources in CatWISE2020, the catalogue built from 10 years of NASA’s WISE infrared survey. Objects that WISE itself measured moving get an arrow and their speed in arcseconds per year, so a mover can be confirmed by a second telescope. Motions near very bright stars are hidden, because their glare creates false movers.',
+      },
+      {
+        name: 'Gaia',
         text: 'Green rings on every star in ESA’s Gaia DR3 catalogue (bigger = brighter), moved to each frame’s date. A blob without a ring is not a known star, and rings landing on stars confirm the image alignment.',
       },
     ],
@@ -86,6 +90,20 @@ export const HELP = {
       {
         name: 'Coordinate grid',
         text: 'Draws lines of constant RA and Dec across the image. The tick labels on the edges are always shown.',
+      },
+    ],
+  },
+  subtract: {
+    title: 'Subtract',
+    intro: 'Chooses what Difference mode takes away from every frame (A − B).',
+    items: [
+      {
+        name: 'Median of all',
+        text: 'B is the typical sky, the per-pixel median of every frame. Good for spotting anything that is not always there.',
+      },
+      {
+        name: 'One frame',
+        text: 'B is a single frame you pick. Step to a frame and press “Use this frame as B”, then blink: a mover shows as an orange spot where it is in the frame you are viewing and a blue spot where it was in B, and the gap is how far it moved between those two dates. The reference frame itself turns blank.',
       },
     ],
   },

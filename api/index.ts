@@ -91,7 +91,75 @@ app.post('/api/cutouts', express.json({ limit: '200kb' }), async (req, res) => {
   res.send(out)
 })
 
-// Gaia DR3 stars around a position (ESA archive has no CORS, so proxy it). Positions are at
+/**
+ * Cone search on an IRSA catalogue through Gator, which answers in seconds where TAP can take
+ * minutes. Returns one record per row keyed by column name; "null" cells become null.
+ */
+async function gator(catalog: string, ra: number, dec: number, radiusAs: number, cols: string, constraints = '') {
+  const url =
+    `https://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query?catalog=${catalog}&spatial=cone` +
+    `&objstr=${ra}+${dec}&radius=${Math.round(radiusAs)}&radunits=arcsec&outfmt=1&selcols=${cols}` +
+    (constraints ? `&constraints=${encodeURIComponent(constraints)}` : '')
+  let text = ''
+  // IRSA's proxy intermittently fails fast with 5xx; the next try usually works.
+  for (let k = 0; k < 4; k++) {
+    const r = await fetch(url, { signal: AbortSignal.timeout(45000) })
+    text = await r.text()
+    if (r.ok && text.includes('|')) break
+    await new Promise((ok) => setTimeout(ok, 500 * 2 ** k))
+  }
+  const lines = text.split('\n')
+  const header = lines.find((l) => l.startsWith('|'))
+  if (!header) throw new Error(`IRSA ${catalog} returned no table`)
+  const names = header.split('|').slice(1, -1).map((h) => h.trim())
+  return lines
+    .filter((l) => l.trim() && !l.startsWith('\\') && !l.startsWith('|'))
+    .map((l) => {
+      // Selected columns are numeric; Gator's clon/clat strings contain no spaces.
+      const v = l.trim().split(/\s+/)
+      return Object.fromEntries(names.map((n, i) => [n, v[i] === undefined || v[i] === 'null' ? null : v[i]]))
+    })
+}
+
+type GaiaStar = { ra: number; dec: number; g: number; pmra: number; pmdec: number }
+
+/** Gaia DR3 stars brighter than `maxG` within `radius` degrees, brightest first (epoch 2016.0). */
+async function queryGaia(ra: number, dec: number, radius: number, maxG: number, top: number): Promise<GaiaStar[]> {
+  try {
+    const rows = await gator('gaia_dr3_source', ra, dec, radius * 3600, 'ra,dec,phot_g_mean_mag,pmra,pmdec', `phot_g_mean_mag<${maxG}`)
+    return rows
+      .map((r) => ({ ra: Number(r.ra), dec: Number(r.dec), g: Number(r.phot_g_mean_mag), pmra: Number(r.pmra ?? 0), pmdec: Number(r.pmdec ?? 0) }))
+      .filter((st) => Number.isFinite(st.g))
+      .sort((a, b) => a.g - b.g)
+      .slice(0, top)
+  } catch {
+    return queryGaiaEsa(ra, dec, radius, maxG, top)
+  }
+}
+
+/** Fallback: ESA's own Gaia archive (slower and sometimes unresponsive). */
+async function queryGaiaEsa(ra: number, dec: number, radius: number, maxG: number, top: number): Promise<GaiaStar[]> {
+  const query = `SELECT TOP ${top} ra, dec, phot_g_mean_mag AS g, pmra, pmdec
+    FROM gaiadr3.gaia_source
+    WHERE 1 = CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', ${ra}, ${dec}, ${radius}))
+      AND phot_g_mean_mag < ${maxG}
+    ORDER BY phot_g_mean_mag`
+  const r = await fetch('https://gea.esac.esa.int/tap-server/tap/sync', {
+    method: 'POST',
+    body: new URLSearchParams({ REQUEST: 'doQuery', LANG: 'ADQL', FORMAT: 'csv', QUERY: query }),
+    signal: AbortSignal.timeout(30000),
+  })
+  const text = await r.text()
+  if (!r.ok || !text.startsWith('ra,')) throw new Error(`Gaia archive returned ${r.status}`)
+  return text
+    .trim()
+    .split('\n')
+    .slice(1)
+    .map((line) => line.split(',').map((v) => (v === '' ? 0 : Number(v))))
+    .map(([sra, sdec, g, pmra, pmdec]) => ({ ra: sra, dec: sdec, g, pmra, pmdec }))
+}
+
+// Gaia DR3 stars around a position (the archives have no CORS, so proxy it). Positions are at
 // epoch 2016.0 with proper motions, so the viewer can place each star at each frame's date.
 app.get('/api/gaia', async (req, res) => {
   const ra = parseCoord(req.query.ra, 0, 360)
@@ -101,29 +169,113 @@ app.get('/api/gaia', async (req, res) => {
     res.status(400).json({ error: 'ra, dec and radius (deg, max 0.25) are required' })
     return
   }
-  const query = `SELECT TOP 400 ra, dec, phot_g_mean_mag AS g, pmra, pmdec
-    FROM gaiadr3.gaia_source
-    WHERE 1 = CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', ${ra}, ${dec}, ${radius}))
-      AND phot_g_mean_mag < 20.5
-    ORDER BY phot_g_mean_mag`
   try {
-    const r = await fetch('https://gea.esac.esa.int/tap-server/tap/sync', {
-      method: 'POST',
-      body: new URLSearchParams({ REQUEST: 'doQuery', LANG: 'ADQL', FORMAT: 'csv', QUERY: query }),
-      signal: AbortSignal.timeout(30000),
-    })
-    const text = await r.text()
-    if (!r.ok || !text.startsWith('ra,')) throw new Error(`Gaia archive returned ${r.status}`)
-    const stars = text
-      .trim()
-      .split('\n')
-      .slice(1)
-      .map((line) => line.split(',').map((v) => (v === '' ? 0 : Number(v))))
-      .map(([sra, sdec, g, pmra, pmdec]) => ({ ra: sra, dec: sdec, g, pmra, pmdec }))
+    const stars = await queryGaia(ra, dec, radius, 20.5, 400)
     res.setHeader('Cache-Control', 'public, s-maxage=604800, max-age=86400')
     res.json({ epoch: 2016.0, stars })
   } catch (err) {
     res.status(502).json({ error: `Gaia lookup failed: ${(err as Error).message}` })
+  }
+})
+
+// CatWISE2020 sources around a position, from IRSA's Gator service (TAP is far slower for cone
+// searches). CatWISE measures motion from WISE itself, so it marks movers independently of Gaia.
+// Kept: sources brighter than W2 = 15, plus every significant mover at any brightness.
+const WISE_BRIGHT_W2 = 15
+const MOVER_MIN_ASYR = 0.15
+const MOVER_MIN_SIGMA = 10
+// Saturated stars leave CatWISE artefacts (spikes, ghosts, halo fragments) with spurious motions
+// of all sizes and directions, so catalogue motions inside a bright star's halo are not trusted.
+const HALO_STAR_MAX_G = 11
+const haloRadiusAs = (g: number) => (g < 5 ? 600 : g < 7 ? 420 : g < 9 ? 300 : 120)
+const HALO_MAX_AS = 600
+const HALO_SELF_AS = 15
+// A saturated star also splinters into several fixed CatWISE entries around its own position.
+const coreRadiusAs = (g: number) => (g < 5 ? 90 : g < 9 ? 60 : 15)
+const GAIA_EPOCH_MJD = 57388 // 2016.0
+
+type WiseSource = { ra: number; dec: number; w1: number | null; w2: number; pmra: number; pmdec: number; mover: boolean; mjd: number }
+
+app.get('/api/wise', async (req, res) => {
+  const ra = parseCoord(req.query.ra, 0, 360)
+  const dec = parseCoord(req.query.dec, -90, 90)
+  const radius = parseCoord(req.query.radius ?? 0.12, 0.001, 0.25)
+  if (ra === null || dec === null || radius === null) {
+    res.status(400).json({ error: 'ra, dec and radius (deg, max 0.25) are required' })
+    return
+  }
+  try {
+    // Bright Gaia stars, to recognise their artefacts; the overlay still works if Gaia is down.
+    const brightStars = queryGaia(ra, dec, radius + HALO_MAX_AS / 3600, HALO_STAR_MAX_G, 50).catch(() => [])
+    const rows = await gator('catwise_2020', ra, dec, radius * 3600, 'ra,dec,w1mpro,w2mpro,pmra,pmdec,sigpmra,sigpmdec,meanobsmjd')
+    const num = (v: string | null) => (v === null ? null : Number(v))
+    const all: (WiseSource & { sig: number })[] = []
+    for (const r of rows) {
+      const [sra, sdec, w1, w2, pmra, pmdec, spra, spdec, mjd] = [
+        'ra', 'dec', 'w1mpro', 'w2mpro', 'pmra', 'pmdec', 'sigpmra', 'sigpmdec', 'meanobsmjd',
+      ].map((k) => num(r[k]))
+      if (sra === null || sdec === null || w2 === null || mjd === null) continue
+      const pm = Math.hypot(pmra ?? 0, pmdec ?? 0)
+      const sig = Math.hypot(spra ?? Infinity, spdec ?? Infinity)
+      const mover = pm > MOVER_MIN_ASYR && pm / sig > MOVER_MIN_SIGMA
+      if (w2 >= WISE_BRIGHT_W2 && !mover) continue
+      // Only trust a motion that is measured; otherwise treat the source as fixed.
+      const useful = pm / sig > 3
+      all.push({
+        ra: sra,
+        dec: sdec,
+        w1,
+        w2,
+        pmra: useful ? (pmra ?? 0) * 1000 : 0,
+        pmdec: useful ? (pmdec ?? 0) * 1000 : 0,
+        mover,
+        mjd,
+        sig,
+      })
+    }
+    const bright = await brightStars
+    const sepAs = (a: { ra: number; dec: number }, b: { ra: number; dec: number }) =>
+      Math.hypot((a.ra - b.ra) * Math.cos((b.dec * Math.PI) / 180), a.dec - b.dec) * 3600
+    // In a bright star's halo (but not the star itself), a catalogue motion is most likely an artefact.
+    // Compare at each star's own epoch offset: Gaia is 2016.0, CatWISE about 2015.4, close enough.
+    const inHalo = (m: WiseSource) =>
+      bright.some((st) => {
+        const d = sepAs(m, st)
+        return d > HALO_SELF_AS && d < haloRadiusAs(st.g)
+      })
+    const movers = all.filter((s) => s.mover && !inHalo(s)).sort((a, b) => a.sig - b.sig)
+    const kept: typeof movers = []
+    for (const m of movers) {
+      const dup = kept.some((k) => {
+        const sep = Math.hypot((m.ra - k.ra) * Math.cos((k.dec * Math.PI) / 180), m.dec - k.dec) * 3600
+        const dpm = Math.hypot(m.pmra - k.pmra, m.pmdec - k.pmdec) / 1000
+        return sep < 10 || (sep < 120 && dpm < 1.5)
+      })
+      if (!dup) kept.push(m)
+    }
+    // Keep only the brightest fixed entry inside each bright star's core (the star itself), placing
+    // the star at the source's epoch, since a fast star like Barnard's moves ~100" in ten years.
+    const fixed = all.filter((s) => !s.mover && s.w2 < WISE_BRIGHT_W2).sort((a, b) => a.w2 - b.w2)
+    const claimed = new Set<number>()
+    const fixedKept = fixed.filter((s) => {
+      for (const [k, st] of bright.entries()) {
+        const dt = (s.mjd - GAIA_EPOCH_MJD) / 365.25
+        const at = {
+          ra: st.ra + (st.pmra * dt) / 3.6e6 / Math.cos((st.dec * Math.PI) / 180),
+          dec: st.dec + (st.pmdec * dt) / 3.6e6,
+        }
+        if (sepAs(s, at) < coreRadiusAs(st.g)) {
+          if (claimed.has(k)) return false
+          claimed.add(k)
+        }
+      }
+      return true
+    })
+    const sources: WiseSource[] = [...fixedKept, ...kept].map(({ sig: _s, ...s }) => s)
+    res.setHeader('Cache-Control', 'public, s-maxage=604800, max-age=86400')
+    res.json({ sources })
+  } catch (err) {
+    res.status(502).json({ error: `WISE lookup failed: ${(err as Error).message}` })
   }
 })
 
