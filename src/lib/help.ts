@@ -16,12 +16,12 @@ export const HELP = {
         text: 'Picks which wavelengths are stacked into the image. A narrow range is a purer colour but uses fewer exposures, so it is noisier.',
       },
       {
-        name: 'D1-D6',
-        text: 'Jump to one detector band (the number under each is its middle wavelength in µm). Stars are brightest in D1-D3. Cold brown dwarfs like WISE 0855 only show up in D5-D6.',
+        name: 'From / to',
+        text: 'Pick the range by detector band: the first box sets the shortest wavelength, the second the longest. Choose the same detector in both to see one band. Stars are brightest in D1-D3; cold brown dwarfs like WISE 0855 only show up in D5-D6. After dragging the slider, the boxes show the exact wavelengths.',
       },
       {
         name: 'All',
-        text: 'Every wavelength at once: the deepest image, but colour information is lost.',
+        text: 'Ticks itself whenever D1 to D6 are all included. Every wavelength at once gives the deepest image, but colour information is lost. Untick to go back to the target’s best band.',
       },
       {
         name: 'Use it to',

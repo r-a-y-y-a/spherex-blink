@@ -7,7 +7,7 @@ It opens on Barnard's Star, with the five challenge targets in a sidebar. Type a
 
 - Finds every SPHEREx Level 2 spectral image covering a position through the NASA/IPAC IRSA archive (Simple Image Access, with TAP as a fallback), including newly ingested quick-release data.
 - Reads only the needed pixels straight from NASA's public S3 copy of the archive with HTTP Range requests, then reprojects each frame north-up so frames taken at different spacecraft orientations line up.
-- Stacks frames per 6-month survey pass, per day, or shows every exposure, within any wavelength range from 0.75 to 5.0 microns (or one of the six detector bands).
+- Stacks frames per 6-month survey pass, per day, or shows every exposure, within any wavelength range from 0.75 to 5.0 microns, picked with a slider or from/to detector dropdowns (D1-D6), with an All checkbox.
 - Difference mode subtracts a reference, either the median of all frames or one chosen frame (A − B), so anything that moved or changed brightness stands out.
 - Click anywhere on the image to get a spectrum (every exposure samples a slightly different wavelength, so all of them together make a spectrum) and a brightness-over-time curve.
 - Pipeline quality flags (saturation, ghosts, streaks, cosmic rays and more) are read from each image's RICE-compressed FLAGS extension at the target. Flagged exposures show hollow in the spectrum, are listed per frame, and can be skipped.
@@ -50,7 +50,7 @@ node --env-file=.env.local scripts/seed.ts wise-0855     # just one
 
 1. The site opens on **Barnard's Star**: the three survey passes play as a flipbook. The other challenge targets are in the left sidebar.
 2. Switch to **3′** and **Difference**: the fastest star in the sky leaves a blue/orange pair as it moves north.
-3. Open **WISE 0855** (opens as a smoothed deep stack with Gaia stars). At **D1** the light sits on a Gaia background star. Click **D6 (4.4-5.0 µm)**: the light shifts onto the dashed circle where the brown dwarf's motion predicts it.
+3. Open **WISE 0855** (opens as a smoothed deep stack with Gaia stars). At **D1** the light sits on a Gaia background star. Pick **D6** in both wavelength boxes (4.4-5.0 µm): the light shifts onto the dashed circle where the brown dwarf's motion predicts it.
 4. Open **Epsilon Indi B**: the spectrum, built from hundreds of exposures that each see a slightly different wavelength, shows the methane bands of a T dwarf.
 5. Open **RW Aurigae**: its spectrum rises toward 5 µm (the dusty disk) and differs between survey passes, because the star varies. Copy the share link.
 

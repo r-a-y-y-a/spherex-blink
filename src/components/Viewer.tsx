@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Crosshair,
@@ -333,6 +334,70 @@ function TargetList({ current, onGo }: { current?: string; onGo: (d: { target: s
         })}
       </ul>
     </nav>
+  )
+}
+
+const DETECTORS = Object.entries(DETECTOR_BANDS).map(([d, [lo, hi]]) => ({ d: Number(d), lo, hi }))
+const near = (a: number, b: number) => Math.abs(a - b) < 0.005
+
+/**
+ * From/to detector dropdowns plus an "All" checkbox, kept in step with the range slider. A bound
+ * dragged off a detector edge shows as its exact wavelength until a detector is picked again.
+ */
+function BandPicker({
+  range,
+  onChange,
+  fallback,
+}: {
+  range: [number, number]
+  onChange: (r: [number, number]) => void
+  fallback: [number, number]
+}) {
+  const fromD = DETECTORS.find((x) => near(x.lo, range[0]))?.d
+  const toD = DETECTORS.find((x) => near(x.hi, range[1]))?.d
+  const all = range[0] <= WAVE_MIN + 0.005 && range[1] >= WAVE_MAX - 0.005
+  const pick = (end: 'from' | 'to', d: number) => {
+    const x = DETECTOR_BANDS[d]
+    if (end === 'from') onChange([x[0], range[1] > x[0] ? range[1] : x[1]])
+    else onChange([range[0] < x[1] ? range[0] : x[0], x[1]])
+  }
+  const select = (end: 'from' | 'to', value: number | undefined, edge: number) => (
+    <div className="relative min-w-0">
+      <select
+        aria-label={end === 'from' ? 'Shortest wavelength' : 'Longest wavelength'}
+        value={value ?? 'custom'}
+        onChange={(e) => pick(end, Number(e.target.value))}
+        className="tabular h-8 w-full min-w-0 appearance-none truncate rounded-md bg-muted pr-7 pl-2.5 font-mono text-xs text-foreground [color-scheme:dark] transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        {value === undefined && (
+          <option value="custom" disabled hidden>
+            {edge.toFixed(2)} µm
+          </option>
+        )}
+        {DETECTORS.map((x) => (
+          <option key={x.d} value={x.d}>
+            D{x.d} · {(end === 'from' ? x.lo : x.hi).toFixed(2)} µm
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+    </div>
+  )
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2">
+      {select('from', fromD, range[0])}
+      <span className="text-xs text-muted-foreground">to</span>
+      {select('to', toD, range[1])}
+      <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs font-medium whitespace-nowrap">
+        <input
+          type="checkbox"
+          checked={all}
+          onChange={(e) => onChange(e.target.checked ? [WAVE_MIN, WAVE_MAX] : fallback)}
+          className="size-4 accent-[var(--primary)]"
+        />
+        All
+      </label>
+    </div>
   )
 }
 
@@ -1084,36 +1149,11 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 className="band-slider"
               />
             </div>
-            <div className="grid grid-cols-7 gap-1">
-              {Object.entries(DETECTOR_BANDS).map(([d, [lo, hi]]) => {
-                const active = Math.abs(range[0] - lo) < 0.01 && Math.abs(range[1] - hi) < 0.01
-                return (
-                  <button
-                    key={d}
-                    onClick={() => setParams({ wmin: lo.toFixed(2), wmax: hi.toFixed(2) })}
-                    title={`Detector ${d}: ${lo}–${hi} µm`}
-                    className={cn(
-                      'rounded-md py-1 text-center text-[11px] transition',
-                      active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <div className="font-semibold">D{d}</div>
-                    <div className="tabular font-mono text-[10px] opacity-80">{((lo + hi) / 2).toFixed(1)}</div>
-                  </button>
-                )
-              })}
-              <button
-                onClick={() => setParams({ wmin: WAVE_MIN.toFixed(2), wmax: WAVE_MAX.toFixed(2) })}
-                className={cn(
-                  'rounded-md py-1 text-[11px] font-semibold transition',
-                  range[0] <= WAVE_MIN + 0.01 && range[1] >= WAVE_MAX - 0.01
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground hover:text-foreground',
-                )}
-              >
-                All
-              </button>
-            </div>
+            <BandPicker
+              range={range}
+              onChange={([lo, hi]) => setParams({ wmin: lo.toFixed(2), wmax: hi.toFixed(2) })}
+              fallback={best}
+            />
           </Section>
 
           <Section title="Frames" info={HELP.frames}>
