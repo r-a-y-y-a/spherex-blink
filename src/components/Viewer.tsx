@@ -616,7 +616,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
       <main className="grid flex-1 gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_430px]">
         {/* Sky */}
         <div className="flex min-w-0 flex-col items-center">
-          <div className="grid w-full max-w-[min(100%,calc(100svh-170px))] min-w-[280px] grid-cols-[3.75rem_minmax(0,1fr)] gap-x-1.5">
+          <div className="grid w-full max-w-[min(100%,calc(100svh-10.875rem))] min-w-[280px] grid-cols-[3.75rem_minmax(0,1fr)] gap-x-1.5">
           {/* Declination labels, horizontal and right-aligned against the image edge. */}
           <div className="relative" aria-hidden>
             {images.length > 0 &&
@@ -888,7 +888,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
         </div>
 
         {/* Controls and measurements */}
-        <aside className="space-y-6 rounded-2xl border border-white/10 bg-card/80 p-5 backdrop-blur lg:max-h-[calc(100svh-112px)] lg:overflow-y-auto">
+        <aside className="space-y-6 rounded-2xl border border-white/10 bg-card/80 p-5 backdrop-blur lg:max-h-[calc(100svh-7rem)] lg:overflow-y-auto">
           <Section title="Wavelength" info={HELP.wavelength} aside={<span className="tabular font-mono text-xs text-primary">{bandLabel}</span>}>
             <div className="py-1" style={{ '--band-gradient': BAND_GRADIENT } as React.CSSProperties}>
               <Slider
