@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
+import { InfoButton } from '@/components/InfoButton'
 import { ScatterChart, type Point } from '@/components/ScatterChart'
 import { VISIT_COLORS } from '@/lib/colors'
 import { flagNames } from '@/lib/spherex/flags'
@@ -20,6 +21,7 @@ import { SearchBox, type Destination } from '@/components/SearchBox'
 import {
   aperture,
   centredCrop,
+  colormapGradient,
   DETECTOR_BANDS,
   displayRange,
   fillHoles,
@@ -37,6 +39,8 @@ import {
   type Dataset,
   type Grouping,
 } from '@/lib/analysis'
+import { pixelToSky, skyTicks } from '@/lib/axes'
+import { HELP, type HelpTopic } from '@/lib/help'
 import { formatDec, formatRa } from '@/lib/coords'
 import { loadLive, loadSeeded, type LiveProgress } from '@/lib/data'
 import { PIXEL_ARCSEC } from '@/lib/spherex/cutout'
@@ -112,11 +116,24 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   )
 }
 
-function Section({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
+function Section({
+  title,
+  info,
+  aside,
+  children,
+}: {
+  title: string
+  info?: HelpTopic
+  aside?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <section className="space-y-2.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+          {info && <InfoButton topic={info} />}
+        </div>
         {aside}
       </div>
       {children}
@@ -158,6 +175,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
   const skipFlagged = params.get('flags') === 'skip'
   const smoothOn = params.get('smooth') === '1'
   const gaiaOn = params.get('gaia') === '1'
+  const gridOn = params.get('grid') === '1'
+  const [hover, setHover] = useState<[number, number] | null>(null)
   const [gaia, setGaia] = useState<GaiaStar[] | null>(null)
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(true)
@@ -332,12 +351,32 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     [groups, stacks, size, apX, apY, current],
   )
 
-  function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
+  function toPixel(e: React.MouseEvent<HTMLCanvasElement>): [number, number] {
     const r = e.currentTarget.getBoundingClientRect()
     const x = crop.x0 + ((e.clientX - r.left) / r.width) * crop.n - 0.5
     const y = crop.y0 + (1 - (e.clientY - r.top) / r.height) * crop.n - 0.5
-    setApert([x, y])
+    return [x, y]
   }
+
+  const ticks = useMemo(() => (ds ? skyTicks(ds.ra, ds.dec, crop) : { ra: [], dec: [] }), [ds, crop])
+  const cmapShown: Colormap | 'diff' = diff ? 'diff' : cmap
+
+  // What is under the pointer (or the aperture, on touch screens): position, pixel value, Gaia star.
+  const probe = hover ?? apert
+  const readout = useMemo(() => {
+    if (!probe || !ds || !images[current]) return null
+    const [x, y] = probe
+    const i = Math.round(x), j = Math.round(y)
+    if (i < 0 || j < 0 || i >= size || j >= size) return null
+    const sky = pixelToSky(x, y, ds.ra, ds.dec, size)
+    const star = gaiaPx.find((p) => Math.hypot(p.x - x, p.y - y) < 1.2)
+    return {
+      ...sky,
+      value: images[current][j * size + i],
+      offset: Math.hypot(x - half, y - half) * PIXEL_ARCSEC,
+      star,
+    }
+  }, [probe, ds, images, current, size, half, gaiaPx])
 
   // Overlay geometry in % of the displayed crop (north up, so flip y).
   const pct = (x: number, y: number) => ({
@@ -345,6 +384,11 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
     top: `${(1 - (y - crop.y0 + 0.5) / crop.n) * 100}%`,
   })
   const arcminPx = 60 / PIXEL_ARCSEC
+  const fmtVal = (v: number) => {
+    const a = Math.abs(v)
+    const s = a >= 100 ? v.toFixed(0) : a >= 1 ? v.toFixed(1) : v.toFixed(2)
+    return Number(s) === 0 ? s.replace('-', '') : s.replace('-', '−')
+  }
   const embed = params.get('embed') === '1'
 
   async function share() {
@@ -386,15 +430,51 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
 
       <main className="grid flex-1 gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_430px]">
         {/* Sky */}
-        <div className="flex min-w-0 flex-col items-center gap-4">
-          <div className="relative aspect-square w-full max-w-[min(100%,calc(100svh-210px))] min-w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_0_80px_-20px_rgba(56,98,180,0.5)]">
+        <div className="flex min-w-0 flex-col items-center">
+          <div className="grid w-full max-w-[min(100%,calc(100svh-190px))] min-w-[280px] grid-cols-[16px_minmax(0,1fr)] gap-x-1.5">
+          {/* Declination labels, reading bottom to top like a plot axis. */}
+          <div className="relative" aria-hidden>
+            {images.length > 0 &&
+              ticks.dec.map((t) => (
+                <span
+                  key={t.label}
+                  className="tabular absolute right-0 -translate-y-1/2 rotate-180 font-mono text-[10px] whitespace-nowrap text-muted-foreground [writing-mode:vertical-rl]"
+                  style={{ top: `${(1 - t.pos) * 100}%` }}
+                >
+                  {t.label}
+                </span>
+              ))}
+          </div>
+          <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_0_80px_-20px_rgba(56,98,180,0.5)]">
             {images.length > 0 && (
               <canvas
                 ref={canvasRef}
-                onClick={onCanvasClick}
+                onClick={(e) => setApert(toPixel(e))}
+                onMouseMove={(e) => setHover(toPixel(e))}
+                onMouseLeave={() => setHover(null)}
                 className="pixelated size-full cursor-crosshair"
                 aria-label={`SPHEREx image of ${title}, ${group?.label ?? ''}, ${bandLabel}`}
               />
+            )}
+
+            {/* RA/Dec ticks on the edges, or full grid lines when the grid is on. */}
+            {images.length > 0 && (
+              <div className="pointer-events-none absolute inset-0" aria-hidden>
+                {ticks.ra.map((t) => (
+                  <span
+                    key={t.label}
+                    className={cn('absolute bottom-0 w-px', gridOn ? 'top-0 bg-white/20' : 'h-2 bg-white/60')}
+                    style={{ left: `${t.pos * 100}%` }}
+                  />
+                ))}
+                {ticks.dec.map((t) => (
+                  <span
+                    key={t.label}
+                    className={cn('absolute left-0 h-px', gridOn ? 'right-0 bg-white/20' : 'w-2 bg-white/60')}
+                    style={{ top: `${(1 - t.pos) * 100}%` }}
+                  />
+                ))}
+              </div>
             )}
 
             {/* Gaia DR3 stars */}
@@ -426,29 +506,40 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               </div>
             )}
 
-            {/* Labels */}
-            {group && (
-              <div className="pointer-events-none absolute top-3 left-3 space-y-1.5">
-                <div className="rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur">
-                  <div className="tabular font-heading text-2xl font-semibold leading-none">{group.label}</div>
-                  <div className="mt-1 text-xs text-white/70">
-                    {grouping === 'all'
-                      ? `All ${visitNames.length} survey passes`
-                      : grouping === 'visit'
-                        ? `Survey pass ${group.visit + 1}`
-                        : `Pass ${group.visit + 1}`}{' '}
-                    ·{' '}
-                    {group.indices.length} exposure{group.indices.length > 1 ? 's' : ''}
+            {/* Labels: one row sharing the width, so they never overlap on a phone. */}
+            {images.length > 0 && (
+              <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-2">
+                {group ? (
+                  <div className="min-w-0 rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur">
+                    <div className="tabular font-heading text-lg font-semibold leading-tight sm:text-2xl sm:leading-none">{group.label}</div>
+                    <div className="mt-1 text-xs text-white/70">
+                      {grouping === 'all'
+                        ? `All ${visitNames.length} survey passes`
+                        : grouping === 'visit'
+                          ? `Survey pass ${group.visit + 1}`
+                          : `Pass ${group.visit + 1}`}{' '}
+                      ·{' '}
+                      {group.indices.length} exposure{group.indices.length > 1 ? 's' : ''}
+                    </div>
+                  </div>
+                ) : (
+                  <span />
+                )}
+                <div className="shrink-0 rounded-lg bg-black/60 px-2.5 py-1.5 text-right backdrop-blur">
+                  <div className="tabular font-mono text-xs sm:text-sm">{bandLabel}</div>
+                  <div className="text-[11px] text-white/60">{diff ? 'Difference from median' : 'Infrared'}</div>
+                  {/* Colour bar: the brightness each colour stands for. */}
+                  <div className="mt-1.5 flex items-center justify-end gap-1.5 font-mono text-[10px] text-white/70">
+                    <span className="tabular">{fmtVal(limits[0])}</span>
+                    <span className="h-1.5 w-10 rounded-full ring-1 ring-white/15 sm:w-12" style={{ background: colormapGradient(cmapShown) }} />
+                    <span className="tabular">{fmtVal(limits[1])}</span>
+                    <span className="font-sans text-white/50">MJy/sr</span>
                   </div>
                 </div>
               </div>
             )}
             {images.length > 0 && (
               <>
-                <div className="pointer-events-none absolute top-3 right-3 rounded-lg bg-black/60 px-2.5 py-1.5 text-right backdrop-blur">
-                  <div className="tabular font-mono text-sm">{bandLabel}</div>
-                  <div className="text-[11px] text-white/60">{diff ? 'Difference from median' : 'Infrared'}</div>
-                </div>
                 {/* Scale bar: sized as a % of the image box, so it tracks the field of view. */}
                 <div
                   className="pointer-events-none absolute bottom-8 left-3 h-[3px] rounded-full bg-white/80"
@@ -514,8 +605,49 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             )}
           </div>
 
+          {/* Right ascension labels (east is left, so RA grows leftward). */}
+          <div className="relative col-start-2 h-4" aria-hidden>
+            {images.length > 0 &&
+              ticks.ra.map((t) => (
+                <span
+                  key={t.label}
+                  className="tabular absolute top-0.5 -translate-x-1/2 font-mono text-[10px] whitespace-nowrap text-muted-foreground"
+                  style={{ left: `${t.pos * 100}%` }}
+                >
+                  {t.label}
+                </span>
+              ))}
+          </div>
+
+          {/* Readout of whatever is under the pointer (or the aperture on touch screens). */}
+          <div className="col-start-2 mt-2 flex min-h-12 items-center justify-between gap-3 rounded-lg bg-card/60 px-3 py-1.5 text-xs ring-1 ring-white/5 sm:min-h-9">
+            <div className="tabular min-w-0 flex-1 font-mono text-muted-foreground">
+              {readout ? (
+                <>
+                  <span className="whitespace-nowrap text-foreground">{formatRa(readout.ra)}</span>{' '}
+                  <span className="whitespace-nowrap text-foreground">{formatDec(readout.dec)}</span>
+                  {' · '}
+                  <span className="whitespace-nowrap">
+                    {Number.isFinite(readout.value) ? `${fmtVal(readout.value)} MJy/sr` : 'no data'}
+                  </span>
+                  {' · '}
+                  <span className="whitespace-nowrap">{readout.offset.toFixed(0)}″ from centre</span>
+                  {readout.star && (
+                    <>
+                      {' · '}
+                      <span className="whitespace-nowrap text-emerald-300">Gaia star G {readout.star.g.toFixed(1)}</span>
+                    </>
+                  )}
+                </>
+              ) : (
+                <span className="font-sans">{images.length ? 'Point at the image for coordinates and brightness' : '\u00a0'}</span>
+              )}
+            </div>
+            <InfoButton topic={HELP.image} className="shrink-0" />
+          </div>
+
           {/* Transport */}
-          <div className="flex w-full max-w-[min(100%,calc(100svh-210px))] min-w-[280px] items-center gap-3">
+          <div className="col-start-2 mt-3 flex items-center gap-3">
             <Button size="icon" variant="secondary" onClick={() => setFrameIdx((i) => (i - 1 + groups.length) % Math.max(1, groups.length))} aria-label="Previous frame">
               <ChevronLeft />
             </Button>
@@ -548,11 +680,12 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
               <span className="tabular w-9 font-mono text-xs text-muted-foreground">{fps}/s</span>
             </div>
           </div>
+          </div>
         </div>
 
         {/* Controls and measurements */}
         <aside className="space-y-6 rounded-2xl border border-white/10 bg-card/80 p-5 backdrop-blur lg:max-h-[calc(100svh-90px)] lg:overflow-y-auto">
-          <Section title="Wavelength" aside={<span className="tabular font-mono text-xs text-primary">{bandLabel}</span>}>
+          <Section title="Wavelength" info={HELP.wavelength} aside={<span className="tabular font-mono text-xs text-primary">{bandLabel}</span>}>
             <div className="py-1" style={{ '--band-gradient': BAND_GRADIENT } as React.CSSProperties}>
               <Slider
                 value={range}
@@ -597,7 +730,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             </div>
           </Section>
 
-          <Section title="Frames">
+          <Section title="Frames" info={HELP.frames}>
             <Segmented
               value={grouping}
               options={GROUPINGS}
@@ -622,8 +755,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             )}
           </Section>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Section title="Display">
+          <div className="grid gap-6 sm:grid-cols-2 sm:gap-4">
+            <Section title="Display" info={HELP.display}>
               <Segmented
                 value={diff ? 'diff' : 'normal'}
                 options={[
@@ -637,16 +770,17 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
                 <Toggle on={gaiaOn} onClick={() => setParams({ gaia: gaiaOn ? null : '1' })} label="Gaia stars" />
               </div>
             </Section>
-            <Section title="Field of view">
+            <Section title="Field of view" info={HELP.field}>
               <Segmented
                 value={fovPx}
                 options={FOVS.filter((f) => f.px <= size).map((f) => ({ id: f.px, label: f.label }))}
                 onChange={(px) => setParams({ fov: px === 64 ? null : String(px) })}
               />
+              <Toggle on={gridOn} onClick={() => setParams({ grid: gridOn ? null : '1' })} label="Coordinate grid" />
             </Section>
           </div>
           {!diff && (
-            <Section title="Colour">
+            <Section title="Colour" info={HELP.colour}>
               <Segmented
                 value={cmap}
                 options={[
@@ -659,7 +793,8 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
           )}
 
           <Section
-            title={apert ? "Spectrum at the ring" : "Spectrum at the centre"}
+            title={apert ? 'Spectrum at the ring' : 'Spectrum at the centre'}
+            info={HELP.spectrum}
             aside={
               <button
                 onClick={() => setApert(null)}
@@ -680,7 +815,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
             />
           </Section>
 
-          <Section title="Brightness over time">
+          <Section title="Brightness over time" info={HELP.lightCurve}>
             <ScatterChart
               points={lightCurve}
               seriesNames={visitNames}
@@ -700,7 +835,7 @@ export function Viewer({ target, ra: raIn, dec: decIn, name, params, setParams, 
           </Section>
 
           {ds && (
-            <Section title="About these frames">
+            <Section title="About these frames" info={HELP.about}>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <dt className="text-muted-foreground">Exposures</dt>
                 <dd className="tabular text-right font-mono">{ds.frames.length}</dd>

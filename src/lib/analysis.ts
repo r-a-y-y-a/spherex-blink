@@ -261,6 +261,25 @@ function lut(map: Colormap | 'diff'): Uint8ClampedArray {
 }
 const LUTS = { ir: lut('ir'), gray: lut('gray'), diff: lut('diff') }
 
+/** CSS gradient of a colormap, for the colour bar. */
+export function colormapGradient(map: Colormap | 'diff') {
+  const t = LUTS[map]
+  const stops = Array.from({ length: 9 }, (_, i) => {
+    const k = Math.round((i / 8) * 255) * 3
+    return `rgb(${t[k]},${t[k + 1]},${t[k + 2]}) ${(i / 8) * 100}%`
+  })
+  return `linear-gradient(90deg, ${stops.join(', ')})`
+}
+
+const STRETCH_SOFT = 0.08
+
+/** The data value drawn at position t (0-1) along the colour bar, undoing the display stretch. */
+export function valueAt(t: number, range: [number, number], map: Colormap | 'diff') {
+  const [lo, hi] = range
+  if (map === 'diff') return lo + (hi - lo) * t
+  return lo + (hi - lo) * STRETCH_SOFT * Math.sinh(t * Math.asinh(1 / STRETCH_SOFT))
+}
+
 /** Renders a crop into RGBA with an asinh stretch (diverging + linear for difference images). */
 export function renderImage(
   img: Float32Array,
@@ -272,7 +291,7 @@ export function renderImage(
   const data = new Uint8ClampedArray(n * n * 4)
   const table = LUTS[map]
   const [lo, hi] = range
-  const soft = 0.08
+  const soft = STRETCH_SOFT
   const norm = Math.asinh(1 / soft)
   for (let j = 0; j < n; j++)
     for (let i = 0; i < n; i++) {
