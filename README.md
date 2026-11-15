@@ -8,7 +8,7 @@
 
 No install, no sign-up: it opens on Barnard's Star and runs in any browser.
 
-[![BLINKx showing WISE 0855, the coldest known brown dwarf, at 4.7 µm with NASA WISE confirming its motion](docs/screenshot.png)](https://blinkx-nasa.vercel.app/?target=wise-0855&group=all&smooth=1&gaia=1&fov=32&bands=6&wise=1)
+[![BLINKx showing WISE 0855, the coldest known brown dwarf, at 4.7 µm with NASA WISE confirming its motion](https://blinkx-nasa.vercel.app/readme-screenshot.png)](https://blinkx-nasa.vercel.app/?target=wise-0855&group=all&smooth=1&gaia=1&fov=32&bands=6&wise=1)
 
 <sub>WISE 0855, the coldest known brown dwarf, appearing at 4.7 µm exactly where its motion predicts, with NASA WISE's catalogue tagging it "8.1″/yr". Click the image to open this view.</sub>
 
